@@ -1,0 +1,386 @@
+const BASE_CONFIG = window.TAPIN_CONFIG || {};
+
+const CONFIG = {
+  GAS_WEB_APP_URL: BASE_CONFIG.GAS_WEB_APP_URL || "",
+  DEFAULT_OFFICE_STATIC_IP: BASE_CONFIG.DEFAULT_OFFICE_STATIC_IP || "203.0.113.10",
+  MAX_GPS_ACCURACY_METERS: Number(BASE_CONFIG.MAX_GPS_ACCURACY_METERS || 120),
+  REQUEST_TIMEOUT_MS: 15000,
+  STORAGE_KEYS: {
+    deviceUUID: "tapin_device_uuid"
+  }
+};
+
+const state = {
+  officeStaticIp: CONFIG.DEFAULT_OFFICE_STATIC_IP,
+  maxGpsAccuracyMeters: CONFIG.MAX_GPS_ACCURACY_METERS
+};
+
+const ui = {
+  nameText: document.getElementById("name-text"),
+  deviceText: document.getElementById("device-text"),
+  statusText: document.getElementById("status-text"),
+  resultText: document.getElementById("result-text"),
+  punchBtn: document.getElementById("punch-btn"),
+  registerArea: document.getElementById("register-area"),
+  registerNameInput: document.getElementById("register-name-input"),
+  registerBtn: document.getElementById("register-btn"),
+  modePunchLink: document.getElementById("mode-punch-link"),
+  modeRegisterLink: document.getElementById("mode-register-link")
+};
+
+function isRegisterMode() {
+  const url = new URL(window.location.href);
+  return (url.searchParams.get("mode") || "").trim().toLowerCase() === "register";
+}
+
+function setModeSwitchActive(registerMode) {
+  if (ui.modePunchLink) {
+    ui.modePunchLink.classList.toggle("active", !registerMode);
+    ui.modePunchLink.setAttribute("aria-current", registerMode ? "false" : "page");
+  }
+  if (ui.modeRegisterLink) {
+    ui.modeRegisterLink.classList.toggle("active", registerMode);
+    ui.modeRegisterLink.setAttribute("aria-current", registerMode ? "page" : "false");
+  }
+}
+
+function generateUUID() {
+  if (window.crypto && typeof window.crypto.randomUUID === "function") {
+    return window.crypto.randomUUID();
+  }
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
+function getOrCreateDeviceUUID() {
+  const key = CONFIG.STORAGE_KEYS.deviceUUID;
+  const existing = localStorage.getItem(key);
+  if (existing) {
+    return existing;
+  }
+  const uuid = generateUUID();
+  localStorage.setItem(key, uuid);
+  return uuid;
+}
+
+function setStatus(text) {
+  ui.statusText.textContent = text;
+}
+
+function setResult(text, isError = false) {
+  ui.resultText.textContent = text;
+  ui.resultText.classList.remove("error", "success");
+  if (text) {
+    ui.resultText.classList.add(isError ? "error" : "success");
+  }
+}
+
+function setBusy(isBusy) {
+  if (ui.punchBtn) {
+    ui.punchBtn.disabled = isBusy;
+    ui.punchBtn.textContent = isBusy ? "處理中..." : "一鍵打卡";
+  }
+  if (ui.registerBtn) {
+    ui.registerBtn.disabled = isBusy;
+    ui.registerBtn.textContent = isBusy ? "處理中..." : "註冊裝置";
+  }
+}
+
+async function getPublicIP() {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), CONFIG.REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch("https://api.ipify.org?format=json", {
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      throw new Error("IP 服務回應異常");
+    }
+    const data = await response.json();
+    if (!data || !data.ip) {
+      throw new Error("無法解析 IP");
+    }
+    return data.ip;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function getCurrentPosition() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error("目前瀏覽器不支援定位"));
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      resolve,
+      () => reject(new Error("無法取得定位，請確認定位權限")),
+      {
+        enableHighAccuracy: true,
+        timeout: CONFIG.REQUEST_TIMEOUT_MS,
+        maximumAge: 0
+      }
+    );
+  });
+}
+
+function validateAccuracy(accuracy) {
+  if (!Number.isFinite(accuracy)) {
+    throw new Error("定位精度不足，請到戶外後重試");
+  }
+  if (accuracy > state.maxGpsAccuracyMeters) {
+    throw new Error(`定位精度過低（${Math.round(accuracy)}m），請重試`);
+  }
+}
+
+async function postToBackend(payload) {
+  if (!CONFIG.GAS_WEB_APP_URL) {
+    throw new Error("尚未設定 GAS_WEB_APP_URL");
+  }
+  const response = await fetch(CONFIG.GAS_WEB_APP_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "text/plain;charset=utf-8"
+    },
+    body: JSON.stringify(payload)
+  });
+  const text = await response.text();
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch (_error) {
+    throw new Error("後端回傳格式錯誤");
+  }
+  if (!response.ok || !data.ok) {
+    throw new Error(data.message || "打卡失敗");
+  }
+  return data;
+}
+
+async function fetchPublicConfig() {
+  if (!CONFIG.GAS_WEB_APP_URL) {
+    return;
+  }
+  const url = new URL(CONFIG.GAS_WEB_APP_URL);
+  url.searchParams.set("action", "publicConfig");
+  const response = await fetch(url.toString());
+  const text = await response.text();
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch (_error) {
+    throw new Error("公開設定回傳格式錯誤");
+  }
+  if (!response.ok || !data.ok || !data.config) {
+    throw new Error(data.message || "無法載入公開設定");
+  }
+  if (data.config.officeStaticIp) {
+    state.officeStaticIp = data.config.officeStaticIp;
+  }
+  if (Number.isFinite(Number(data.config.maxGpsAccuracyMeters))) {
+    state.maxGpsAccuracyMeters = Number(data.config.maxGpsAccuracyMeters);
+  }
+}
+
+function toFixedNumber(value) {
+  return Number(Number(value).toFixed(7));
+}
+
+async function maybeNotifyArrival(locationStatus) {
+  if (!("Notification" in window)) {
+    return;
+  }
+  if (locationStatus !== "Office") {
+    return;
+  }
+  if (Notification.permission === "default") {
+    await Notification.requestPermission();
+  }
+  if (Notification.permission === "granted") {
+    new Notification("TapIn", {
+      body: "已完成到站打卡",
+      tag: "tapin-arrival"
+    });
+  }
+}
+
+function refreshHintStatus() {
+  setStatus(`IP 邊界參考值：${state.officeStaticIp}`);
+}
+
+function resolvePunchMessage(result) {
+  if (result.punchMessage) {
+    return result.punchMessage;
+  }
+  if (result.employeeName) {
+    return `${result.employeeName} 打卡成功`;
+  }
+  return "打卡成功";
+}
+
+async function submitPunch(payload) {
+  setStatus("送出打卡中...");
+  const result = await postToBackend(payload);
+  await maybeNotifyArrival(result.locationStatus);
+  setStatus("打卡完成");
+  ui.nameText.textContent = result.employeeName || "由系統自動識別";
+  setResult(resolvePunchMessage(result));
+}
+
+async function handleRegister() {
+  const deviceUUID = getOrCreateDeviceUUID();
+  const name = String(ui.registerNameInput.value || "").trim();
+  if (!name) {
+    setResult("請輸入姓名", true);
+    return;
+  }
+
+  setBusy(true);
+  setResult("");
+
+  try {
+    if (window.location.protocol !== "https:" && window.location.hostname !== "localhost") {
+      throw new Error("請使用 HTTPS 才能安全註冊");
+    }
+
+    const payload = {
+      action: "registerDevice",
+      requestId: generateUUID(),
+      requestTimestamp: Date.now(),
+      name: name,
+      deviceUUID: deviceUUID,
+      originProtocol: window.location.protocol.replace(":", ""),
+      originHost: window.location.hostname,
+      userAgent: navigator.userAgent,
+      appVersion: "1.2.0"
+    };
+
+    setStatus("送出註冊中...");
+    const result = await postToBackend(payload);
+    const employeeName = result.employeeName || name;
+    ui.nameText.textContent = employeeName;
+    setStatus("註冊完成");
+    setResult(result.registerMessage || `${employeeName} 註冊成功`);
+  } catch (error) {
+    setStatus("註冊失敗");
+    setResult(error.message || "發生未知錯誤", true);
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function handlePunch() {
+  const deviceUUID = getOrCreateDeviceUUID();
+  setBusy(true);
+  setResult("");
+
+  try {
+    if (window.location.protocol !== "https:" && window.location.hostname !== "localhost") {
+      throw new Error("請使用 HTTPS 才能安全打卡");
+    }
+
+    setStatus("取得 IP 與定位中...");
+    const [ip, position] = await Promise.all([getPublicIP(), getCurrentPosition()]);
+    const { latitude, longitude, accuracy } = position.coords;
+    validateAccuracy(accuracy);
+
+    const payload = {
+      action: "punch",
+      requestId: generateUUID(),
+      requestTimestamp: Date.now(),
+      deviceUUID: deviceUUID,
+      ipAddress: ip,
+      latitude: toFixedNumber(latitude),
+      longitude: toFixedNumber(longitude),
+      accuracyMeters: Math.round(accuracy),
+      originProtocol: window.location.protocol.replace(":", ""),
+      originHost: window.location.hostname,
+      userAgent: navigator.userAgent,
+      appVersion: "1.1.0"
+    };
+
+    await submitPunch(payload);
+  } catch (error) {
+    setStatus("打卡失敗");
+    setResult(error.message || "發生未知錯誤", true);
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function initServiceWorker() {
+  if (!("serviceWorker" in navigator)) {
+    return;
+  }
+  try {
+    await navigator.serviceWorker.register("./sw.js");
+  } catch (_error) {
+    setStatus("Service Worker 註冊失敗");
+  }
+}
+
+function initUI() {
+  const deviceUUID = getOrCreateDeviceUUID();
+  const registerMode = isRegisterMode();
+  setModeSwitchActive(registerMode);
+  ui.nameText.textContent = registerMode ? "註冊模式" : "由系統自動識別";
+  ui.deviceText.textContent = `Device UUID: ${deviceUUID}`;
+
+  if (!CONFIG.GAS_WEB_APP_URL) {
+    setResult("請先設定 web/config.js 的 GAS_WEB_APP_URL", true);
+  }
+
+  if (ui.registerArea) {
+    ui.registerArea.hidden = !registerMode;
+  }
+  if (ui.punchBtn) {
+    ui.punchBtn.hidden = registerMode;
+  }
+
+  refreshHintStatus();
+  if (registerMode) {
+    if (!ui.registerBtn || !ui.registerNameInput) {
+      setStatus("註冊模式初始化失敗");
+      setResult("請重新整理頁面後再試", true);
+      return;
+    }
+    setStatus("請輸入姓名註冊此裝置");
+    ui.registerBtn.addEventListener("click", handleRegister);
+    ui.registerNameInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        handleRegister();
+      }
+    });
+    return;
+  }
+
+  ui.punchBtn.addEventListener("click", handlePunch);
+}
+
+async function bootstrap() {
+  const registerMode = isRegisterMode();
+  initUI();
+  initServiceWorker();
+  if (CONFIG.GAS_WEB_APP_URL) {
+    try {
+      await fetchPublicConfig();
+      if (registerMode) {
+        setStatus("請輸入姓名註冊此裝置");
+      } else {
+        refreshHintStatus();
+      }
+    } catch (_error) {
+      if (registerMode) {
+        setStatus("請輸入姓名註冊此裝置");
+      } else {
+        refreshHintStatus();
+      }
+    }
+  }
+}
+
+bootstrap();

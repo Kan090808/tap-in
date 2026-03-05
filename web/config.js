@@ -1,0 +1,5 @@
+window.TAPIN_CONFIG = {
+  GAS_WEB_APP_URL: "https://script.google.com/macros/s/AKfycbyXLrx1qua0tj4PJnp-YKrKIUxmDyrUruKXqmAvGNGBzOXOF1P5FYJLcWnwOw7mQHI08w/exec",
+  DEFAULT_OFFICE_STATIC_IP: "203.0.113.10",
+  MAX_GPS_ACCURACY_METERS: 120
+};

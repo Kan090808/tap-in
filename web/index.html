@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://api.ipify.org https://script.google.com https://script.googleusercontent.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <meta name="theme-color" content="#0066FF" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="TapIn" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="description" content="TapIn 一鍵打卡 PWA" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./icons/icon.svg" type="image/svg+xml" />
+    <link rel="icon" href="./icons/icon-192.png" sizes="192x192" type="image/png" />
+    <link rel="icon" href="./icons/icon-512.png" sizes="512x512" type="image/png" />
+    <link rel="apple-touch-icon" href="./icons/apple-touch-icon-180.png" sizes="180x180" />
+    <title>TapIn</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <header class="topbar">
+        <h1>TapIn</h1>
+        <div class="topbar-actions">
+          <a class="ghost-btn admin-link" href="./admin.html">管理後台</a>
+        </div>
+      </header>
+
+      <nav class="mode-switch" aria-label="頁面模式切換">
+        <a id="mode-punch-link" class="mode-link" href="./index.html">打卡頁</a>
+        <a id="mode-register-link" class="mode-link" href="./index.html?mode=register">註冊頁</a>
+      </nav>
+
+      <section class="identity-card">
+        <p class="label">目前識別</p>
+        <p id="name-text" class="name">由系統自動識別</p>
+        <p id="device-text" class="meta"></p>
+      </section>
+
+      <section class="action-area">
+        <button id="punch-btn" class="punch-btn" type="button">一鍵打卡</button>
+      </section>
+
+      <section id="register-area" class="register-area" hidden>
+        <p class="label">註冊姓名</p>
+        <input id="register-name-input" class="register-input" type="text" autocomplete="name" placeholder="請輸入員工姓名" />
+        <button id="register-btn" class="register-btn" type="button">註冊裝置</button>
+      </section>
+
+      <section class="status-area">
+        <p id="status-text" class="status">準備完成</p>
+        <p id="result-text" class="result"></p>
+      </section>
+    </main>
+
+    <script src="./config.js" defer></script>
+    <script src="./app.js" defer></script>
+  </body>
+</html>
