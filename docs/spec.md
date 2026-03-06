@@ -55,12 +55,14 @@
 - Display Mode: Standalone (No browser address bar).
 - Theme Color: #0066FF (Trust Blue).
 - Installability: Prompt user to Add to Home Screen for App-like behavior.
+- Desktop Chromium: Provide explicit "新增至桌面" button via `beforeinstallprompt`.
 - iOS Safari: Show explicit "Share -> Add to Home Screen" guidance flow.
 - Icons: Provide `192x192`, `512x512`, and `apple-touch-icon (180x180)` for install compatibility.
 - Notification: Request permission for Arrival Alerts based on Geofencing.
 
 ## 6. Anti-Fraud Logic
 - Time Source: Uses server-side Google time only, ignores local phone time.
+- Request Timestamp Source: Frontend fetches GAS `serverTime` before submit, then sends network timestamp for freshness validation.
 - UUID Validation: Punch-in is allowed only when device UUID is registered in binding sheet.
 - Roster Validation: Registration succeeds only if the submitted name exists in `Employees` sheet.
 - HTTPS Only: Production punch-in requires HTTPS; localhost is only for development tests.

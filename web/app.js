@@ -12,7 +12,8 @@ const CONFIG = {
 
 const state = {
   officeStaticIp: CONFIG.DEFAULT_OFFICE_STATIC_IP,
-  maxGpsAccuracyMeters: CONFIG.MAX_GPS_ACCURACY_METERS
+  maxGpsAccuracyMeters: CONFIG.MAX_GPS_ACCURACY_METERS,
+  deferredInstallPrompt: null
 };
 
 const ui = {
@@ -25,7 +26,9 @@ const ui = {
   registerNameInput: document.getElementById("register-name-input"),
   registerBtn: document.getElementById("register-btn"),
   modePunchLink: document.getElementById("mode-punch-link"),
-  modeRegisterLink: document.getElementById("mode-register-link")
+  modeRegisterLink: document.getElementById("mode-register-link"),
+  installBtn: document.getElementById("install-btn"),
+  installHint: document.getElementById("install-hint")
 };
 
 function isRegisterMode() {
@@ -160,22 +163,33 @@ async function postToBackend(payload) {
   return data;
 }
 
-async function fetchPublicConfig() {
+async function getFromBackend(action) {
   if (!CONFIG.GAS_WEB_APP_URL) {
-    return;
+    throw new Error("尚未設定 GAS_WEB_APP_URL");
   }
   const url = new URL(CONFIG.GAS_WEB_APP_URL);
-  url.searchParams.set("action", "publicConfig");
-  const response = await fetch(url.toString());
+  url.searchParams.set("action", action);
+  const response = await fetch(url.toString(), { cache: "no-store" });
   const text = await response.text();
   let data;
   try {
     data = JSON.parse(text);
   } catch (_error) {
-    throw new Error("公開設定回傳格式錯誤");
+    throw new Error("後端回傳格式錯誤");
   }
-  if (!response.ok || !data.ok || !data.config) {
-    throw new Error(data.message || "無法載入公開設定");
+  if (!response.ok || !data.ok) {
+    throw new Error(data.message || "後端請求失敗");
+  }
+  return data;
+}
+
+async function fetchPublicConfig() {
+  if (!CONFIG.GAS_WEB_APP_URL) {
+    return;
+  }
+  const data = await getFromBackend("publicConfig");
+  if (!data.config) {
+    throw new Error("無法載入公開設定");
   }
   if (data.config.officeStaticIp) {
     state.officeStaticIp = data.config.officeStaticIp;
@@ -183,6 +197,15 @@ async function fetchPublicConfig() {
   if (Number.isFinite(Number(data.config.maxGpsAccuracyMeters))) {
     state.maxGpsAccuracyMeters = Number(data.config.maxGpsAccuracyMeters);
   }
+}
+
+async function fetchNetworkTimestamp() {
+  const data = await getFromBackend("serverTime");
+  const timestamp = Number(data.serverTimestampMs);
+  if (!Number.isFinite(timestamp)) {
+    throw new Error("無法取得網路時間");
+  }
+  return Math.round(timestamp);
 }
 
 function toFixedNumber(value) {
@@ -211,14 +234,112 @@ function refreshHintStatus() {
   setStatus(`IP 邊界參考值：${state.officeStaticIp}`);
 }
 
+function formatNetworkTime(value) {
+  const time = new Date(value);
+  if (Number.isNaN(time.getTime())) {
+    return String(value || "未知");
+  }
+  return time.toLocaleString("zh-TW", { hour12: false });
+}
+
 function resolvePunchMessage(result) {
-  if (result.punchMessage) {
-    return result.punchMessage;
+  const baseMessage = result.punchMessage
+    ? result.punchMessage
+    : result.employeeName
+      ? `${result.employeeName} 打卡成功`
+      : "打卡成功";
+  if (result.serverTime) {
+    return `${baseMessage}（網路時間：${formatNetworkTime(result.serverTime)}）`;
   }
-  if (result.employeeName) {
-    return `${result.employeeName} 打卡成功`;
+  return baseMessage;
+}
+
+function isStandaloneMode() {
+  if (window.matchMedia("(display-mode: standalone)").matches) {
+    return true;
   }
-  return "打卡成功";
+  return window.navigator.standalone === true;
+}
+
+function isIosSafari() {
+  const ua = navigator.userAgent.toLowerCase();
+  const isIos = /iphone|ipad|ipod/.test(ua);
+  const isSafari = /safari/.test(ua) && !/crios|fxios|edgios|opios/.test(ua);
+  return isIos && isSafari;
+}
+
+function setInstallHint(text) {
+  if (!ui.installHint) {
+    return;
+  }
+  const value = String(text || "").trim();
+  ui.installHint.textContent = value;
+  ui.installHint.hidden = value.length === 0;
+}
+
+function hideInstallEntry() {
+  if (ui.installBtn) {
+    ui.installBtn.hidden = true;
+    ui.installBtn.disabled = false;
+  }
+  setInstallHint("");
+}
+
+function initInstallEntry() {
+  if (!ui.installBtn) {
+    return;
+  }
+  if (isStandaloneMode()) {
+    hideInstallEntry();
+    return;
+  }
+
+  ui.installBtn.hidden = true;
+  ui.installBtn.disabled = true;
+  setInstallHint("");
+
+  if (isIosSafari()) {
+    ui.installBtn.hidden = false;
+    ui.installBtn.disabled = false;
+    setInstallHint("iOS 請點分享，再選「加入主畫面」");
+    ui.installBtn.addEventListener("click", () => {
+      setInstallHint("請在 Safari 點「分享」->「加入主畫面」");
+    });
+    return;
+  }
+
+  window.addEventListener("beforeinstallprompt", (event) => {
+    event.preventDefault();
+    state.deferredInstallPrompt = event;
+    ui.installBtn.hidden = false;
+    ui.installBtn.disabled = false;
+    setInstallHint("可將 TapIn 新增到桌面，像 App 一樣啟動");
+  });
+
+  window.addEventListener("appinstalled", () => {
+    state.deferredInstallPrompt = null;
+    hideInstallEntry();
+    setStatus("已新增至桌面");
+  });
+
+  ui.installBtn.addEventListener("click", async () => {
+    if (!state.deferredInstallPrompt) {
+      setInstallHint("目前瀏覽器未提供安裝提示，請使用 Chrome 或 Edge。");
+      return;
+    }
+    const promptEvent = state.deferredInstallPrompt;
+    state.deferredInstallPrompt = null;
+    await promptEvent.prompt();
+    const choice = await promptEvent.userChoice;
+    if (choice && choice.outcome === "accepted") {
+      hideInstallEntry();
+      setStatus("已新增至桌面");
+      return;
+    }
+    ui.installBtn.hidden = false;
+    ui.installBtn.disabled = false;
+    setInstallHint("你已取消新增至桌面，可再次點擊重試。");
+  });
 }
 
 async function submitPunch(payload) {
@@ -245,11 +366,12 @@ async function handleRegister() {
     if (window.location.protocol !== "https:" && window.location.hostname !== "localhost") {
       throw new Error("請使用 HTTPS 才能安全註冊");
     }
+    const requestTimestamp = await fetchNetworkTimestamp();
 
     const payload = {
       action: "registerDevice",
       requestId: generateUUID(),
-      requestTimestamp: Date.now(),
+      requestTimestamp: requestTimestamp,
       name: name,
       deviceUUID: deviceUUID,
       originProtocol: window.location.protocol.replace(":", ""),
@@ -286,11 +408,12 @@ async function handlePunch() {
     const [ip, position] = await Promise.all([getPublicIP(), getCurrentPosition()]);
     const { latitude, longitude, accuracy } = position.coords;
     validateAccuracy(accuracy);
+    const requestTimestamp = await fetchNetworkTimestamp();
 
     const payload = {
       action: "punch",
       requestId: generateUUID(),
-      requestTimestamp: Date.now(),
+      requestTimestamp: requestTimestamp,
       deviceUUID: deviceUUID,
       ipAddress: ip,
       latitude: toFixedNumber(latitude),
@@ -341,6 +464,7 @@ function initUI() {
   }
 
   refreshHintStatus();
+  initInstallEntry();
   if (registerMode) {
     if (!ui.registerBtn || !ui.registerNameInput) {
       setStatus("註冊模式初始化失敗");

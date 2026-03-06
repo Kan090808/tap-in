@@ -17,3 +17,5 @@
 - 管理者帳號需先在 GAS 執行 `setAdminCredential` 建立。
 - 已補齊 PWA 安裝相容性：Android 可用 `beforeinstallprompt`，iOS 提供「分享 -> 加入主畫面」引導，並新增 PNG icon（192/512/180）。
 - 已新增 GitHub Actions 部署流程，push `main` 後會自動發佈 `web/` 到 GitHub Pages。
+- 已新增「新增至桌面」按鈕流程：Desktop Chromium 觸發安裝提示，iOS Safari 顯示加入主畫面引導。
+- 打卡與註冊請求已改為先取 GAS `serverTime`，以網路時間作為 request timestamp，避免本機時間偏移造成驗證誤差。

@@ -71,6 +71,13 @@ function doPost(e) {
 function doGet(e) {
   try {
     const action = normalizeText_(e && e.parameter ? e.parameter.action : "");
+    if (action === "serverTime") {
+      const now = new Date();
+      return jsonResponse_(true, "Server time", {
+        serverTime: now.toISOString(),
+        serverTimestampMs: now.getTime()
+      });
+    }
     if (action === "publicConfig") {
       const runtimeConfig = getRuntimeConfig_();
       return jsonResponse_(true, "Public config", {
