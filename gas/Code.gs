@@ -76,6 +76,14 @@ function doPost(e) {
       return handleAdminUpdateLeaveStatus_(request, runtimeConfig);
     }
 
+    if (action === "adminGetCalendar") {
+      return handleAdminGetCalendar_(request, runtimeConfig);
+    }
+
+    if (action === "employeeGetCalendar") {
+      return handleEmployeeGetCalendar_(request, runtimeConfig);
+    }
+
     return jsonResponse_(false, "Unsupported action");
   } catch (error) {
     return jsonResponse_(false, error.message || "Unknown server error");
@@ -510,6 +518,140 @@ function handleAdminUpdateLeaveStatus_(request, runtimeConfig) {
   });
 
   return jsonResponse_(true, "已更新", { requestId: requestId, status: newStatus });
+}
+
+function pad2_(n) {
+  return n < 10 ? "0" + String(n) : String(n);
+}
+
+function handleAdminGetCalendar_(request, runtimeConfig) {
+  requireAdminSession_(request);
+  const year = Math.round(Number(request.year));
+  const month = Math.round(Number(request.month));
+  if (!Number.isFinite(year) || year < 2000 || year > 2099) {
+    throw new Error("Invalid year");
+  }
+  if (!Number.isFinite(month) || month < 1 || month > 12) {
+    throw new Error("Invalid month");
+  }
+
+  const firstDay = year + "-" + pad2_(month) + "-01";
+  const lastDay = year + "-" + pad2_(month) + "-" + pad2_(new Date(year, month, 0).getDate());
+
+  const leavesByDate = {};
+  const sheet = getSheetIfExists_(runtimeConfig, runtimeConfig.leaveSheetName);
+  if (sheet) {
+    const lastRow = sheet.getLastRow();
+    if (lastRow >= 2) {
+      const values = sheet.getRange(2, 1, lastRow - 1, 8).getValues();
+      for (let i = 0; i < values.length; i += 1) {
+        const status = normalizeText_(values[i][7]);
+        if (status !== "approved") continue;
+        const name = normalizeText_(values[i][1]);
+        const start = normalizeText_(values[i][4]);
+        const end = normalizeText_(values[i][5]);
+        if (!start || !end || end < firstDay || start > lastDay) continue;
+        const rangeStart = start < firstDay ? firstDay : start;
+        const rangeEnd = end > lastDay ? lastDay : end;
+        let d = new Date(rangeStart + "T12:00:00Z");
+        const endD = new Date(rangeEnd + "T12:00:00Z");
+        while (d <= endD) {
+          const dateStr = d.toISOString().slice(0, 10);
+          if (!leavesByDate[dateStr]) leavesByDate[dateStr] = [];
+          if (leavesByDate[dateStr].indexOf(name) === -1) leavesByDate[dateStr].push(name);
+          d = new Date(d.getTime() + 86400000);
+        }
+      }
+    }
+  }
+
+  return jsonResponse_(true, "Calendar loaded", {
+    year: year,
+    month: month,
+    leavesByDate: leavesByDate
+  });
+}
+
+function handleEmployeeGetCalendar_(request, runtimeConfig) {
+  const deviceUUID = normalizeText_(request.deviceUUID);
+  if (!deviceUUID) {
+    throw new Error("Missing device UUID");
+  }
+  const binding = findBindingByDeviceUUID_(runtimeConfig, deviceUUID);
+  if (!binding.employeeName) {
+    throw new Error("此裝置尚未註冊，請先掃描 QR Code 註冊");
+  }
+  const employeeName = binding.employeeName;
+
+  const year = Math.round(Number(request.year));
+  const month = Math.round(Number(request.month));
+  if (!Number.isFinite(year) || year < 2000 || year > 2099) {
+    throw new Error("Invalid year");
+  }
+  if (!Number.isFinite(month) || month < 1 || month > 12) {
+    throw new Error("Invalid month");
+  }
+
+  const firstDay = year + "-" + pad2_(month) + "-01";
+  const lastDay = year + "-" + pad2_(month) + "-" + pad2_(new Date(year, month, 0).getDate());
+
+  const punchesByDate = {};
+  const logSheet = getSheetIfExists_(runtimeConfig, runtimeConfig.logSheetName);
+  if (logSheet) {
+    const lastRow = logSheet.getLastRow();
+    if (lastRow >= 2) {
+      const values = logSheet.getRange(2, 1, lastRow - 1, 5).getValues();
+      for (let i = 0; i < values.length; i += 1) {
+        const empName = normalizeText_(values[i][1]);
+        if (empName !== employeeName) continue;
+        const ts = normalizeText_(values[i][0]);
+        if (!ts) continue;
+        const d = new Date(ts);
+        if (isNaN(d.getTime())) continue;
+        const dateStr = Utilities.formatDate(d, "Asia/Taipei", "yyyy-MM-dd");
+        if (dateStr < firstDay || dateStr > lastDay) continue;
+        const timeStr = Utilities.formatDate(d, "Asia/Taipei", "HH:mm");
+        const locationStatus = normalizeText_(values[i][4]);
+        if (!punchesByDate[dateStr]) punchesByDate[dateStr] = [];
+        punchesByDate[dateStr].push({ time: timeStr, locationStatus: locationStatus });
+      }
+    }
+  }
+
+  const leavesByDate = {};
+  const leaveSheet = getSheetIfExists_(runtimeConfig, runtimeConfig.leaveSheetName);
+  if (leaveSheet) {
+    const lastRow = leaveSheet.getLastRow();
+    if (lastRow >= 2) {
+      const values = leaveSheet.getRange(2, 1, lastRow - 1, 8).getValues();
+      for (let i = 0; i < values.length; i += 1) {
+        const empName = normalizeText_(values[i][1]);
+        const status = normalizeText_(values[i][7]);
+        if (empName !== employeeName || status !== "approved") continue;
+        const leaveType = normalizeText_(values[i][3]);
+        const start = normalizeText_(values[i][4]);
+        const end = normalizeText_(values[i][5]);
+        if (!start || !end || end < firstDay || start > lastDay) continue;
+        const rangeStart = start < firstDay ? firstDay : start;
+        const rangeEnd = end > lastDay ? lastDay : end;
+        let d = new Date(rangeStart + "T12:00:00Z");
+        const endD = new Date(rangeEnd + "T12:00:00Z");
+        while (d <= endD) {
+          const dateStr = d.toISOString().slice(0, 10);
+          leavesByDate[dateStr] = { leaveType: leaveType };
+          d = new Date(d.getTime() + 86400000);
+        }
+      }
+    }
+  }
+
+  return jsonResponse_(true, "Calendar loaded", {
+    year: year,
+    month: month,
+    employeeName: employeeName,
+    punchesByDate: punchesByDate,
+    leavesByDate: leavesByDate
+  });
 }
 
 function parseRequest_(e) {

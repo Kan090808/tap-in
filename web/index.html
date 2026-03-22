@@ -34,6 +34,7 @@
         <a id="mode-punch-link" class="mode-link" href="./index.html">打卡頁</a>
         <a id="mode-register-link" class="mode-link" href="./index.html?mode=register">註冊頁</a>
         <a id="mode-leave-link" class="mode-link" href="./index.html?mode=leave">請假</a>
+        <a id="mode-calendar-link" class="mode-link" href="./index.html?mode=calendar">日曆</a>
       </nav>
 
       <section class="identity-card">
@@ -73,6 +74,16 @@
         </div>
         <textarea id="leave-reason" class="leave-reason" placeholder="請假原因（必填）" maxlength="200" rows="3"></textarea>
         <button id="leave-btn" class="leave-btn" type="button">送出請假申請</button>
+      </section>
+
+      <section id="calendar-area" class="calendar-area" hidden>
+        <div class="cal-nav">
+          <button id="emp-cal-prev" class="ghost-btn" type="button">‹ 上月</button>
+          <select id="emp-cal-year"></select>
+          <select id="emp-cal-month"></select>
+          <button id="emp-cal-next" class="ghost-btn" type="button">下月 ›</button>
+        </div>
+        <div id="emp-cal-wrap" class="cal-wrap"></div>
       </section>
 
       <section class="status-area">

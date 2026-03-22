@@ -28,6 +28,11 @@ const ui = {
   leaveStatusSelect: document.getElementById("leave-status-select"),
   reloadLeaveBtn: document.getElementById("reload-leave-btn"),
   leaveBody: document.getElementById("leave-body"),
+  adminCalPrev: document.getElementById("admin-cal-prev"),
+  adminCalNext: document.getElementById("admin-cal-next"),
+  adminCalYearSel: document.getElementById("admin-cal-year"),
+  adminCalMonthSel: document.getElementById("admin-cal-month"),
+  adminCalWrap: document.getElementById("admin-cal-wrap"),
   statusText: document.getElementById("admin-status"),
   resultText: document.getElementById("admin-result")
 };
@@ -220,6 +225,100 @@ function renderLeaveTable(leaves) {
     .join("");
 }
 
+let adminCalYear = new Date().getFullYear();
+let adminCalMonth = new Date().getMonth() + 1;
+
+function initCalSelects(yearEl, monthEl, year, month) {
+  if (!yearEl || !monthEl) return;
+  const curYear = new Date().getFullYear();
+  yearEl.innerHTML = "";
+  for (let y = curYear - 5; y <= curYear + 5; y += 1) {
+    const opt = document.createElement("option");
+    opt.value = y;
+    opt.textContent = y + " 年";
+    if (y === year) opt.selected = true;
+    yearEl.appendChild(opt);
+  }
+  monthEl.innerHTML = "";
+  for (let m = 1; m <= 12; m += 1) {
+    const opt = document.createElement("option");
+    opt.value = m;
+    opt.textContent = m + " 月";
+    if (m === month) opt.selected = true;
+    monthEl.appendChild(opt);
+  }
+}
+
+function buildCalendarHtml(year, month, dayContentFn) {
+  const today = new Date();
+  const todayStr =
+    today.getFullYear() +
+    "-" +
+    String(today.getMonth() + 1).padStart(2, "0") +
+    "-" +
+    String(today.getDate()).padStart(2, "0");
+
+  const firstDow = new Date(year, month - 1, 1).getDay(); // 0=Sun
+  const startOffset = (firstDow + 6) % 7; // Mon=0 … Sun=6
+  const daysInMonth = new Date(year, month, 0).getDate();
+
+  const HEADERS = ["一", "二", "三", "四", "五", "六", "日"];
+  let html = '<div class="cal-grid">';
+  HEADERS.forEach(function (h) {
+    html += '<div class="cal-header-cell">' + h + "</div>";
+  });
+  for (let i = 0; i < startOffset; i += 1) {
+    html += '<div class="cal-day empty"></div>';
+  }
+  for (let d = 1; d <= daysInMonth; d += 1) {
+    const dateStr =
+      year +
+      "-" +
+      String(month).padStart(2, "0") +
+      "-" +
+      String(d).padStart(2, "0");
+    const isToday = dateStr === todayStr;
+    html += '<div class="cal-day' + (isToday ? " today" : "") + '">';
+    html += '<div class="cal-day-num">' + d + "</div>";
+    html += dayContentFn(dateStr);
+    html += "</div>";
+  }
+  html += "</div>";
+  return html;
+}
+
+async function loadAdminCalendar() {
+  if (!ui.adminCalWrap) return;
+  try {
+    setStatus("載入日曆中...");
+    const token = getToken();
+    const data = await postApi({
+      action: "adminGetCalendar",
+      token: token,
+      year: adminCalYear,
+      month: adminCalMonth
+    });
+    const leavesByDate = data.leavesByDate || {};
+    ui.adminCalWrap.innerHTML = buildCalendarHtml(
+      adminCalYear,
+      adminCalMonth,
+      function (dateStr) {
+        const names = leavesByDate[dateStr] || [];
+        return names
+          .map(function (n) {
+            return '<span class="cal-leave-badge">' + escapeHtml(n) + "</span>";
+          })
+          .join("");
+      }
+    );
+    setStatus("日曆已更新");
+    setResult("");
+  } catch (error) {
+    setStatus("日曆載入失敗");
+    setResult(error.message || "未知錯誤", true);
+  }
+}
+
 async function handleLeaveAction(requestId, status) {
   try {
     setStatus(status === "approved" ? "批准中..." : "拒絕中...");
@@ -237,12 +336,15 @@ async function handleLeaveAction(requestId, status) {
 async function enterDashboard() {
   try {
     showDashboard(true);
+    initCalSelects(ui.adminCalYearSel, ui.adminCalMonthSel, adminCalYear, adminCalMonth);
     setStatus("讀取設定中...");
     await loadConfig();
     setStatus("讀取打卡紀錄中...");
     await loadLogs();
     setStatus("讀取請假申請中...");
     await loadLeaveRequests();
+    setStatus("讀取日曆中...");
+    await loadAdminCalendar();
     setStatus("管理頁已就緒");
     setResult("");
   } catch (error) {
@@ -337,6 +439,40 @@ function bindEvents() {
         setStatus("載入失敗");
         setResult(error.message || "未知錯誤", true);
       }
+    });
+  }
+
+  if (ui.adminCalPrev) {
+    ui.adminCalPrev.addEventListener("click", async () => {
+      adminCalMonth -= 1;
+      if (adminCalMonth < 1) { adminCalMonth = 12; adminCalYear -= 1; }
+      if (ui.adminCalYearSel) ui.adminCalYearSel.value = adminCalYear;
+      if (ui.adminCalMonthSel) ui.adminCalMonthSel.value = adminCalMonth;
+      await loadAdminCalendar();
+    });
+  }
+
+  if (ui.adminCalNext) {
+    ui.adminCalNext.addEventListener("click", async () => {
+      adminCalMonth += 1;
+      if (adminCalMonth > 12) { adminCalMonth = 1; adminCalYear += 1; }
+      if (ui.adminCalYearSel) ui.adminCalYearSel.value = adminCalYear;
+      if (ui.adminCalMonthSel) ui.adminCalMonthSel.value = adminCalMonth;
+      await loadAdminCalendar();
+    });
+  }
+
+  if (ui.adminCalYearSel) {
+    ui.adminCalYearSel.addEventListener("change", async () => {
+      adminCalYear = Number(ui.adminCalYearSel.value);
+      await loadAdminCalendar();
+    });
+  }
+
+  if (ui.adminCalMonthSel) {
+    ui.adminCalMonthSel.addEventListener("change", async () => {
+      adminCalMonth = Number(ui.adminCalMonthSel.value);
+      await loadAdminCalendar();
     });
   }
 }
