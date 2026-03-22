@@ -21,9 +21,18 @@ const ui = {
   logSheetNameInput: document.getElementById("log-sheet-name-input"),
   bindingSheetNameInput: document.getElementById("binding-sheet-name-input"),
   maxGpsInput: document.getElementById("max-gps-input"),
+  leaveSheetNameInput: document.getElementById("leave-sheet-name-input"),
   reloadLogsBtn: document.getElementById("reload-logs-btn"),
   limitSelect: document.getElementById("limit-select"),
   logsBody: document.getElementById("logs-body"),
+  leaveStatusSelect: document.getElementById("leave-status-select"),
+  reloadLeaveBtn: document.getElementById("reload-leave-btn"),
+  leaveBody: document.getElementById("leave-body"),
+  adminCalPrev: document.getElementById("admin-cal-prev"),
+  adminCalNext: document.getElementById("admin-cal-next"),
+  adminCalYearSel: document.getElementById("admin-cal-year"),
+  adminCalMonthSel: document.getElementById("admin-cal-month"),
+  adminCalWrap: document.getElementById("admin-cal-wrap"),
   statusText: document.getElementById("admin-status"),
   resultText: document.getElementById("admin-result")
 };
@@ -91,6 +100,9 @@ function fillConfig(config) {
   ui.logSheetNameInput.value = config.logSheetName || "";
   ui.bindingSheetNameInput.value = config.bindingSheetName || "";
   ui.maxGpsInput.value = config.maxGpsAccuracyMeters || "";
+  if (ui.leaveSheetNameInput) {
+    ui.leaveSheetNameInput.value = config.leaveSheetName || "";
+  }
 }
 
 function renderLogs(logs) {
@@ -161,7 +173,8 @@ async function saveConfig() {
     officeStaticIp: ui.officeIpInput.value.trim(),
     logSheetName: ui.logSheetNameInput.value.trim(),
     bindingSheetName: ui.bindingSheetNameInput.value.trim(),
-    maxGpsAccuracyMeters: Number(ui.maxGpsInput.value)
+    maxGpsAccuracyMeters: Number(ui.maxGpsInput.value),
+    leaveSheetName: ui.leaveSheetNameInput ? ui.leaveSheetNameInput.value.trim() : ""
   };
   const data = await postApi(payload);
   fillConfig(data.config);
@@ -174,13 +187,164 @@ async function loadLogs() {
   renderLogs(data.logs || []);
 }
 
+async function loadLeaveRequests() {
+  const token = getToken();
+  const status = ui.leaveStatusSelect ? ui.leaveStatusSelect.value : "pending";
+  const data = await postApi({ action: "adminGetLeaveRequests", token: token, status: status, limit: 100 });
+  renderLeaveTable(data.leaves || []);
+}
+
+function renderLeaveTable(leaves) {
+  if (!ui.leaveBody) return;
+  if (!leaves.length) {
+    ui.leaveBody.innerHTML = '<tr><td colspan="9">目前沒有資料</td></tr>';
+    return;
+  }
+  const statusLabels = { pending: "待審核", approved: "已批准", rejected: "已拒絕" };
+  ui.leaveBody.innerHTML = leaves
+    .map((item) => {
+      const statusLabel = statusLabels[item.status] || escapeHtml(item.status);
+      const actionCell =
+        item.status === "pending"
+          ? `<button class="ghost-btn" onclick="handleLeaveAction('${escapeHtml(item.requestId)}','approved')">批准</button>
+             <button class="ghost-btn" onclick="handleLeaveAction('${escapeHtml(item.requestId)}','rejected')">拒絕</button>`
+          : statusLabel;
+      const shortId = escapeHtml(item.requestId).slice(0, 8) + "…";
+      return `<tr>
+        <td title="${escapeHtml(item.requestId)}">${shortId}</td>
+        <td>${escapeHtml(item.employeeName)}</td>
+        <td>${escapeHtml(item.leaveType)}</td>
+        <td>${escapeHtml(item.startDate)}</td>
+        <td>${escapeHtml(item.endDate)}</td>
+        <td>${escapeHtml(item.reason)}</td>
+        <td>${statusLabel}</td>
+        <td>${escapeHtml(item.submittedAt)}</td>
+        <td>${actionCell}</td>
+      </tr>`;
+    })
+    .join("");
+}
+
+let adminCalYear = new Date().getFullYear();
+let adminCalMonth = new Date().getMonth() + 1;
+
+function initCalSelects(yearEl, monthEl, year, month) {
+  if (!yearEl || !monthEl) return;
+  const curYear = new Date().getFullYear();
+  yearEl.innerHTML = "";
+  for (let y = curYear - 5; y <= curYear + 5; y += 1) {
+    const opt = document.createElement("option");
+    opt.value = y;
+    opt.textContent = y + " 年";
+    if (y === year) opt.selected = true;
+    yearEl.appendChild(opt);
+  }
+  monthEl.innerHTML = "";
+  for (let m = 1; m <= 12; m += 1) {
+    const opt = document.createElement("option");
+    opt.value = m;
+    opt.textContent = m + " 月";
+    if (m === month) opt.selected = true;
+    monthEl.appendChild(opt);
+  }
+}
+
+function buildCalendarHtml(year, month, dayContentFn) {
+  const today = new Date();
+  const todayStr =
+    today.getFullYear() +
+    "-" +
+    String(today.getMonth() + 1).padStart(2, "0") +
+    "-" +
+    String(today.getDate()).padStart(2, "0");
+
+  const firstDow = new Date(year, month - 1, 1).getDay(); // 0=Sun
+  const startOffset = (firstDow + 6) % 7; // Mon=0 … Sun=6
+  const daysInMonth = new Date(year, month, 0).getDate();
+
+  const HEADERS = ["一", "二", "三", "四", "五", "六", "日"];
+  let html = '<div class="cal-grid">';
+  HEADERS.forEach(function (h) {
+    html += '<div class="cal-header-cell">' + h + "</div>";
+  });
+  for (let i = 0; i < startOffset; i += 1) {
+    html += '<div class="cal-day empty"></div>';
+  }
+  for (let d = 1; d <= daysInMonth; d += 1) {
+    const dateStr =
+      year +
+      "-" +
+      String(month).padStart(2, "0") +
+      "-" +
+      String(d).padStart(2, "0");
+    const isToday = dateStr === todayStr;
+    html += '<div class="cal-day' + (isToday ? " today" : "") + '">';
+    html += '<div class="cal-day-num">' + d + "</div>";
+    html += dayContentFn(dateStr);
+    html += "</div>";
+  }
+  html += "</div>";
+  return html;
+}
+
+async function loadAdminCalendar() {
+  if (!ui.adminCalWrap) return;
+  try {
+    setStatus("載入日曆中...");
+    const token = getToken();
+    const data = await postApi({
+      action: "adminGetCalendar",
+      token: token,
+      year: adminCalYear,
+      month: adminCalMonth
+    });
+    const leavesByDate = data.leavesByDate || {};
+    ui.adminCalWrap.innerHTML = buildCalendarHtml(
+      adminCalYear,
+      adminCalMonth,
+      function (dateStr) {
+        const names = leavesByDate[dateStr] || [];
+        return names
+          .map(function (n) {
+            return '<span class="cal-leave-badge">' + escapeHtml(n) + "</span>";
+          })
+          .join("");
+      }
+    );
+    setStatus("日曆已更新");
+    setResult("");
+  } catch (error) {
+    setStatus("日曆載入失敗");
+    setResult(error.message || "未知錯誤", true);
+  }
+}
+
+async function handleLeaveAction(requestId, status) {
+  try {
+    setStatus(status === "approved" ? "批准中..." : "拒絕中...");
+    const token = getToken();
+    await postApi({ action: "adminUpdateLeaveStatus", token: token, requestId: requestId, status: status });
+    setStatus(status === "approved" ? "已批准" : "已拒絕");
+    setResult("");
+    await loadLeaveRequests();
+  } catch (error) {
+    setStatus("操作失敗");
+    setResult(error.message || "未知錯誤", true);
+  }
+}
+
 async function enterDashboard() {
   try {
     showDashboard(true);
+    initCalSelects(ui.adminCalYearSel, ui.adminCalMonthSel, adminCalYear, adminCalMonth);
     setStatus("讀取設定中...");
     await loadConfig();
     setStatus("讀取打卡紀錄中...");
     await loadLogs();
+    setStatus("讀取請假申請中...");
+    await loadLeaveRequests();
+    setStatus("讀取日曆中...");
+    await loadAdminCalendar();
     setStatus("管理頁已就緒");
     setResult("");
   } catch (error) {
@@ -249,6 +413,68 @@ function bindEvents() {
       setResult(error.message || "未知錯誤", true);
     }
   });
+
+  if (ui.reloadLeaveBtn) {
+    ui.reloadLeaveBtn.addEventListener("click", async () => {
+      try {
+        setStatus("載入請假申請中...");
+        await loadLeaveRequests();
+        setStatus("請假申請已更新");
+        setResult("");
+      } catch (error) {
+        setStatus("載入失敗");
+        setResult(error.message || "未知錯誤", true);
+      }
+    });
+  }
+
+  if (ui.leaveStatusSelect) {
+    ui.leaveStatusSelect.addEventListener("change", async () => {
+      try {
+        setStatus("載入請假申請中...");
+        await loadLeaveRequests();
+        setStatus("請假申請已更新");
+        setResult("");
+      } catch (error) {
+        setStatus("載入失敗");
+        setResult(error.message || "未知錯誤", true);
+      }
+    });
+  }
+
+  if (ui.adminCalPrev) {
+    ui.adminCalPrev.addEventListener("click", async () => {
+      adminCalMonth -= 1;
+      if (adminCalMonth < 1) { adminCalMonth = 12; adminCalYear -= 1; }
+      if (ui.adminCalYearSel) ui.adminCalYearSel.value = adminCalYear;
+      if (ui.adminCalMonthSel) ui.adminCalMonthSel.value = adminCalMonth;
+      await loadAdminCalendar();
+    });
+  }
+
+  if (ui.adminCalNext) {
+    ui.adminCalNext.addEventListener("click", async () => {
+      adminCalMonth += 1;
+      if (adminCalMonth > 12) { adminCalMonth = 1; adminCalYear += 1; }
+      if (ui.adminCalYearSel) ui.adminCalYearSel.value = adminCalYear;
+      if (ui.adminCalMonthSel) ui.adminCalMonthSel.value = adminCalMonth;
+      await loadAdminCalendar();
+    });
+  }
+
+  if (ui.adminCalYearSel) {
+    ui.adminCalYearSel.addEventListener("change", async () => {
+      adminCalYear = Number(ui.adminCalYearSel.value);
+      await loadAdminCalendar();
+    });
+  }
+
+  if (ui.adminCalMonthSel) {
+    ui.adminCalMonthSel.addEventListener("change", async () => {
+      adminCalMonth = Number(ui.adminCalMonthSel.value);
+      await loadAdminCalendar();
+    });
+  }
 }
 
 async function bootstrap() {

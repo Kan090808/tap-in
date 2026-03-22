@@ -6,6 +6,7 @@ const DEFAULT_CONFIG = {
   AUDIT_SHEET_NAME: "AuditLogs",
   OFFICE_STATIC_IP: "203.0.113.10",
   MAX_GPS_ACCURACY_METERS: 120,
+  LEAVE_SHEET_NAME: "LeaveRequests",
   ADMIN_SESSION_HOURS: 12,
   ADMIN_LOGIN_MAX_FAILURES: 5,
   ADMIN_LOGIN_LOCK_MINUTES: 15,
@@ -25,7 +26,8 @@ const PROPERTY_KEYS = {
   ADMIN_PASSWORD_SALT: "TAPIN_ADMIN_PASSWORD_SALT",
   ADMIN_SESSIONS_JSON: "TAPIN_ADMIN_SESSIONS_JSON",
   ADMIN_LOGIN_GUARD_JSON: "TAPIN_ADMIN_LOGIN_GUARD_JSON",
-  REQUEST_NONCES_JSON: "TAPIN_REQUEST_NONCES_JSON"
+  REQUEST_NONCES_JSON: "TAPIN_REQUEST_NONCES_JSON",
+  LEAVE_SHEET_NAME: "TAPIN_LEAVE_SHEET_NAME"
 };
 
 function doPost(e) {
@@ -60,6 +62,26 @@ function doPost(e) {
 
     if (action === "registerDevice") {
       return handleRegisterDevice_(request, runtimeConfig);
+    }
+
+    if (action === "submitLeave") {
+      return handleSubmitLeave_(request, runtimeConfig);
+    }
+
+    if (action === "adminGetLeaveRequests") {
+      return handleAdminGetLeaveRequests_(request, runtimeConfig);
+    }
+
+    if (action === "adminUpdateLeaveStatus") {
+      return handleAdminUpdateLeaveStatus_(request, runtimeConfig);
+    }
+
+    if (action === "adminGetCalendar") {
+      return handleAdminGetCalendar_(request, runtimeConfig);
+    }
+
+    if (action === "employeeGetCalendar") {
+      return handleEmployeeGetCalendar_(request, runtimeConfig);
     }
 
     return jsonResponse_(false, "Unsupported action");
@@ -221,6 +243,7 @@ function handleAdminGetConfig_(request, runtimeConfig) {
       logSheetName: runtimeConfig.logSheetName,
       bindingSheetName: runtimeConfig.bindingSheetName,
       auditSheetName: runtimeConfig.auditSheetName,
+      leaveSheetName: runtimeConfig.leaveSheetName,
       maxGpsAccuracyMeters: runtimeConfig.maxGpsAccuracyMeters
     }
   });
@@ -233,6 +256,7 @@ function handleAdminUpdateConfig_(request, runtimeConfig) {
   const nextOfficeStaticIp = normalizeText_(request.officeStaticIp) || runtimeConfig.officeStaticIp;
   const nextLogSheetName = normalizeText_(request.logSheetName) || runtimeConfig.logSheetName;
   const nextBindingSheetName = normalizeText_(request.bindingSheetName) || runtimeConfig.bindingSheetName;
+  const nextLeaveSheetName = normalizeText_(request.leaveSheetName) || runtimeConfig.leaveSheetName;
   const nextMaxAccuracyRaw = request.maxGpsAccuracyMeters;
   const nextMaxAccuracy = Number(
     nextMaxAccuracyRaw == null || nextMaxAccuracyRaw === "" ? runtimeConfig.maxGpsAccuracyMeters : nextMaxAccuracyRaw
@@ -250,6 +274,9 @@ function handleAdminUpdateConfig_(request, runtimeConfig) {
   if (!nextBindingSheetName) {
     return jsonResponse_(false, "Binding sheet name is required");
   }
+  if (!nextLeaveSheetName) {
+    return jsonResponse_(false, "Leave sheet name is required");
+  }
   if (!Number.isFinite(nextMaxAccuracy) || nextMaxAccuracy <= 0) {
     return jsonResponse_(false, "Max GPS accuracy must be a positive number");
   }
@@ -260,6 +287,7 @@ function handleAdminUpdateConfig_(request, runtimeConfig) {
     TAPIN_OFFICE_STATIC_IP: nextOfficeStaticIp,
     TAPIN_LOG_SHEET_NAME: nextLogSheetName,
     TAPIN_BINDING_SHEET_NAME: nextBindingSheetName,
+    TAPIN_LEAVE_SHEET_NAME: nextLeaveSheetName,
     TAPIN_MAX_GPS_ACCURACY_METERS: String(Math.round(nextMaxAccuracy))
   }, true);
 
@@ -276,6 +304,7 @@ function handleAdminUpdateConfig_(request, runtimeConfig) {
       logSheetName: updatedConfig.logSheetName,
       bindingSheetName: updatedConfig.bindingSheetName,
       auditSheetName: updatedConfig.auditSheetName,
+      leaveSheetName: updatedConfig.leaveSheetName,
       maxGpsAccuracyMeters: updatedConfig.maxGpsAccuracyMeters
     }
   });
@@ -312,6 +341,317 @@ function handleAdminGetLogs_(request, runtimeConfig) {
   });
 
   return jsonResponse_(true, "Logs loaded", { logs: logs });
+}
+
+function handleSubmitLeave_(request, runtimeConfig) {
+  validateLeaveRequest_(request);
+  requireFreshRequest_(request, "submitLeave", DEFAULT_CONFIG.REQUEST_FRESHNESS_WINDOW_MS);
+
+  const binding = findBindingByDeviceUUID_(runtimeConfig, request.deviceUUID);
+  if (!binding.employeeName) {
+    throw new Error("此裝置尚未註冊，請先掃描 QR Code 註冊");
+  }
+
+  const leaveSheet = getOrCreateSheet_(runtimeConfig, runtimeConfig.leaveSheetName, [
+    "RequestID", "EmployeeName", "DeviceUUID", "LeaveType",
+    "StartDate", "EndDate", "Reason", "Status",
+    "SubmittedAt", "ReviewedAt", "ReviewedBy", "ReviewNote"
+  ]);
+  leaveSheet.appendRow([
+    request.requestId,
+    binding.employeeName,
+    request.deviceUUID,
+    request.leaveType,
+    request.startDate,
+    request.endDate,
+    request.reason,
+    "pending",
+    new Date().toISOString(),
+    "", "", ""
+  ]);
+
+  return jsonResponse_(true, "請假申請已送出", {
+    employeeName: binding.employeeName,
+    requestId: request.requestId
+  });
+}
+
+function validateLeaveRequest_(request) {
+  const deviceUUID = normalizeText_(request.deviceUUID);
+  const leaveType = normalizeText_(request.leaveType);
+  const startDate = normalizeText_(request.startDate);
+  const endDate = normalizeText_(request.endDate);
+  const reason = normalizeText_(request.reason);
+  const requestTimestamp = Number(request.requestTimestamp);
+  const requestId = normalizeText_(request.requestId);
+
+  if (!deviceUUID) {
+    throw new Error("Missing device UUID");
+  }
+  if (!requestId) {
+    throw new Error("Missing request id");
+  }
+  if (!Number.isFinite(requestTimestamp)) {
+    throw new Error("Missing request timestamp");
+  }
+
+  const validLeaveTypes = ["病假", "事假", "特休", "其他"];
+  if (validLeaveTypes.indexOf(leaveType) === -1) {
+    throw new Error("無效的假別");
+  }
+
+  const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+  if (!datePattern.test(startDate) || isNaN(new Date(startDate).getTime())) {
+    throw new Error("無效的開始日期");
+  }
+  if (!datePattern.test(endDate) || isNaN(new Date(endDate).getTime())) {
+    throw new Error("無效的結束日期");
+  }
+  if (endDate < startDate) {
+    throw new Error("結束日期不能早於開始日期");
+  }
+  if (!reason) {
+    throw new Error("請假原因不能為空");
+  }
+
+  request.deviceUUID = deviceUUID;
+  request.leaveType = leaveType;
+  request.startDate = startDate;
+  request.endDate = endDate;
+  request.reason = reason;
+  request.requestTimestamp = Math.round(requestTimestamp);
+  request.requestId = requestId;
+}
+
+function handleAdminGetLeaveRequests_(request, runtimeConfig) {
+  requireAdminSession_(request);
+  const statusFilter = normalizeText_(request.status) || "pending";
+  const limitRaw = Number(request.limit);
+  const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(1, Math.round(limitRaw)), 200) : 50;
+
+  const sheet = getSheetIfExists_(runtimeConfig, runtimeConfig.leaveSheetName);
+  if (!sheet) {
+    return jsonResponse_(true, "No leave requests", { leaves: [] });
+  }
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) {
+    return jsonResponse_(true, "No leave requests", { leaves: [] });
+  }
+
+  const rowsToRead = Math.min(limit, lastRow - 1);
+  const startRow = lastRow - rowsToRead + 1;
+  const values = sheet.getRange(startRow, 1, rowsToRead, 12).getValues();
+  values.reverse();
+
+  let leaves = values.map(function (row) {
+    return {
+      requestId: normalizeText_(row[0]),
+      employeeName: normalizeText_(row[1]),
+      deviceUUID: normalizeText_(row[2]),
+      leaveType: normalizeText_(row[3]),
+      startDate: normalizeText_(row[4]),
+      endDate: normalizeText_(row[5]),
+      reason: normalizeText_(row[6]),
+      status: normalizeText_(row[7]),
+      submittedAt: normalizeText_(row[8]),
+      reviewedAt: normalizeText_(row[9]) || null,
+      reviewedBy: normalizeText_(row[10]) || null,
+      reviewNote: normalizeText_(row[11]) || null
+    };
+  });
+
+  if (statusFilter !== "all") {
+    leaves = leaves.filter(function (item) {
+      return item.status === statusFilter;
+    });
+  }
+
+  return jsonResponse_(true, "Leave requests loaded", { leaves: leaves });
+}
+
+function handleAdminUpdateLeaveStatus_(request, runtimeConfig) {
+  const adminUsername = requireAdminSession_(request);
+  const requestId = normalizeText_(request.requestId);
+  const newStatus = normalizeText_(request.status);
+  const reviewNote = normalizeText_(request.reviewNote);
+
+  if (!requestId) {
+    throw new Error("Missing requestId");
+  }
+  if (newStatus !== "approved" && newStatus !== "rejected") {
+    throw new Error("Status must be approved or rejected");
+  }
+
+  const sheet = getSheetIfExists_(runtimeConfig, runtimeConfig.leaveSheetName);
+  if (!sheet) {
+    throw new Error("LeaveRequests sheet not found");
+  }
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) {
+    throw new Error("No leave requests found");
+  }
+
+  const ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+  let targetRow = -1;
+  for (let i = 0; i < ids.length; i += 1) {
+    if (normalizeText_(ids[i][0]) === requestId) {
+      targetRow = i + 2;
+      break;
+    }
+  }
+  if (targetRow === -1) {
+    throw new Error("找不到此請假申請");
+  }
+
+  const now = new Date().toISOString();
+  sheet.getRange(targetRow, 8).setValue(newStatus);
+  sheet.getRange(targetRow, 10).setValue(now);
+  sheet.getRange(targetRow, 11).setValue(adminUsername);
+  sheet.getRange(targetRow, 12).setValue(reviewNote);
+
+  appendAuditLogSafe_(runtimeConfig, {
+    eventType: "LEAVE_STATUS_UPDATED",
+    username: adminUsername,
+    detail: "RequestID=" + requestId + " Status=" + newStatus
+  });
+
+  return jsonResponse_(true, "已更新", { requestId: requestId, status: newStatus });
+}
+
+function pad2_(n) {
+  return n < 10 ? "0" + String(n) : String(n);
+}
+
+function handleAdminGetCalendar_(request, runtimeConfig) {
+  requireAdminSession_(request);
+  const year = Math.round(Number(request.year));
+  const month = Math.round(Number(request.month));
+  if (!Number.isFinite(year) || year < 2000 || year > 2099) {
+    throw new Error("Invalid year");
+  }
+  if (!Number.isFinite(month) || month < 1 || month > 12) {
+    throw new Error("Invalid month");
+  }
+
+  const firstDay = year + "-" + pad2_(month) + "-01";
+  const lastDay = year + "-" + pad2_(month) + "-" + pad2_(new Date(year, month, 0).getDate());
+
+  const leavesByDate = {};
+  const sheet = getSheetIfExists_(runtimeConfig, runtimeConfig.leaveSheetName);
+  if (sheet) {
+    const lastRow = sheet.getLastRow();
+    if (lastRow >= 2) {
+      const values = sheet.getRange(2, 1, lastRow - 1, 8).getValues();
+      for (let i = 0; i < values.length; i += 1) {
+        const status = normalizeText_(values[i][7]);
+        if (status !== "approved") continue;
+        const name = normalizeText_(values[i][1]);
+        const start = normalizeText_(values[i][4]);
+        const end = normalizeText_(values[i][5]);
+        if (!start || !end || end < firstDay || start > lastDay) continue;
+        const rangeStart = start < firstDay ? firstDay : start;
+        const rangeEnd = end > lastDay ? lastDay : end;
+        let d = new Date(rangeStart + "T12:00:00Z");
+        const endD = new Date(rangeEnd + "T12:00:00Z");
+        while (d <= endD) {
+          const dateStr = d.toISOString().slice(0, 10);
+          if (!leavesByDate[dateStr]) leavesByDate[dateStr] = [];
+          if (leavesByDate[dateStr].indexOf(name) === -1) leavesByDate[dateStr].push(name);
+          d = new Date(d.getTime() + 86400000);
+        }
+      }
+    }
+  }
+
+  return jsonResponse_(true, "Calendar loaded", {
+    year: year,
+    month: month,
+    leavesByDate: leavesByDate
+  });
+}
+
+function handleEmployeeGetCalendar_(request, runtimeConfig) {
+  const deviceUUID = normalizeText_(request.deviceUUID);
+  if (!deviceUUID) {
+    throw new Error("Missing device UUID");
+  }
+  const binding = findBindingByDeviceUUID_(runtimeConfig, deviceUUID);
+  if (!binding.employeeName) {
+    throw new Error("此裝置尚未註冊，請先掃描 QR Code 註冊");
+  }
+  const employeeName = binding.employeeName;
+
+  const year = Math.round(Number(request.year));
+  const month = Math.round(Number(request.month));
+  if (!Number.isFinite(year) || year < 2000 || year > 2099) {
+    throw new Error("Invalid year");
+  }
+  if (!Number.isFinite(month) || month < 1 || month > 12) {
+    throw new Error("Invalid month");
+  }
+
+  const firstDay = year + "-" + pad2_(month) + "-01";
+  const lastDay = year + "-" + pad2_(month) + "-" + pad2_(new Date(year, month, 0).getDate());
+
+  const punchesByDate = {};
+  const logSheet = getSheetIfExists_(runtimeConfig, runtimeConfig.logSheetName);
+  if (logSheet) {
+    const lastRow = logSheet.getLastRow();
+    if (lastRow >= 2) {
+      const values = logSheet.getRange(2, 1, lastRow - 1, 5).getValues();
+      for (let i = 0; i < values.length; i += 1) {
+        const empName = normalizeText_(values[i][1]);
+        if (empName !== employeeName) continue;
+        const ts = normalizeText_(values[i][0]);
+        if (!ts) continue;
+        const d = new Date(ts);
+        if (isNaN(d.getTime())) continue;
+        const dateStr = Utilities.formatDate(d, "Asia/Taipei", "yyyy-MM-dd");
+        if (dateStr < firstDay || dateStr > lastDay) continue;
+        const timeStr = Utilities.formatDate(d, "Asia/Taipei", "HH:mm");
+        const locationStatus = normalizeText_(values[i][4]);
+        if (!punchesByDate[dateStr]) punchesByDate[dateStr] = [];
+        punchesByDate[dateStr].push({ time: timeStr, locationStatus: locationStatus });
+      }
+    }
+  }
+
+  const leavesByDate = {};
+  const leaveSheet = getSheetIfExists_(runtimeConfig, runtimeConfig.leaveSheetName);
+  if (leaveSheet) {
+    const lastRow = leaveSheet.getLastRow();
+    if (lastRow >= 2) {
+      const values = leaveSheet.getRange(2, 1, lastRow - 1, 8).getValues();
+      for (let i = 0; i < values.length; i += 1) {
+        const empName = normalizeText_(values[i][1]);
+        const status = normalizeText_(values[i][7]);
+        if (empName !== employeeName || status !== "approved") continue;
+        const leaveType = normalizeText_(values[i][3]);
+        const start = normalizeText_(values[i][4]);
+        const end = normalizeText_(values[i][5]);
+        if (!start || !end || end < firstDay || start > lastDay) continue;
+        const rangeStart = start < firstDay ? firstDay : start;
+        const rangeEnd = end > lastDay ? lastDay : end;
+        let d = new Date(rangeStart + "T12:00:00Z");
+        const endD = new Date(rangeEnd + "T12:00:00Z");
+        while (d <= endD) {
+          const dateStr = d.toISOString().slice(0, 10);
+          leavesByDate[dateStr] = { leaveType: leaveType };
+          d = new Date(d.getTime() + 86400000);
+        }
+      }
+    }
+  }
+
+  return jsonResponse_(true, "Calendar loaded", {
+    year: year,
+    month: month,
+    employeeName: employeeName,
+    punchesByDate: punchesByDate,
+    leavesByDate: leavesByDate
+  });
 }
 
 function parseRequest_(e) {
@@ -496,6 +836,8 @@ function getRuntimeConfig_() {
     normalizeText_(properties.getProperty(PROPERTY_KEYS.EMPLOYEE_SHEET_NAME)) || DEFAULT_CONFIG.EMPLOYEE_SHEET_NAME;
   const auditSheetName =
     normalizeText_(properties.getProperty(PROPERTY_KEYS.AUDIT_SHEET_NAME)) || DEFAULT_CONFIG.AUDIT_SHEET_NAME;
+  const leaveSheetName =
+    normalizeText_(properties.getProperty(PROPERTY_KEYS.LEAVE_SHEET_NAME)) || DEFAULT_CONFIG.LEAVE_SHEET_NAME;
   const maxGpsAccuracyRaw =
     normalizeText_(properties.getProperty(PROPERTY_KEYS.MAX_GPS_ACCURACY_METERS)) ||
     String(DEFAULT_CONFIG.MAX_GPS_ACCURACY_METERS);
@@ -515,6 +857,7 @@ function getRuntimeConfig_() {
     bindingSheetName: bindingSheetName,
     employeeSheetName: employeeSheetName,
     auditSheetName: auditSheetName,
+    leaveSheetName: leaveSheetName,
     maxGpsAccuracyMeters: Math.round(maxGpsAccuracyMeters)
   };
 }

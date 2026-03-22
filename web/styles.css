@@ -225,6 +225,161 @@ body {
   color: var(--success);
 }
 
+.leave-area {
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 16px;
+  box-shadow: 0 10px 28px rgba(0, 102, 255, 0.08);
+  margin: 20px 0;
+}
+
+.leave-select,
+.leave-date-input,
+.leave-reason {
+  width: 100%;
+  margin-top: 8px;
+  border: 1px solid rgba(15, 23, 42, 0.15);
+  border-radius: 12px;
+  padding: 12px;
+  font-size: 16px;
+  font-family: inherit;
+  background: #fff;
+  color: var(--text);
+}
+
+.leave-date-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.leave-date-field {
+  display: flex;
+  flex-direction: column;
+}
+
+.leave-date-label {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.leave-date-input {
+  margin-top: 4px;
+}
+
+.leave-reason {
+  resize: vertical;
+}
+
+.leave-btn {
+  width: 100%;
+  margin-top: 12px;
+  border: none;
+  border-radius: 14px;
+  background: var(--primary);
+  color: #ffffff;
+  min-height: 52px;
+  font-size: 18px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.leave-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.calendar-area {
+  margin-bottom: 14px;
+}
+
+.cal-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.cal-nav select {
+  border: 1px solid rgba(15, 23, 42, 0.16);
+  border-radius: 10px;
+  min-height: 36px;
+  padding: 0 8px;
+  font-size: 14px;
+  background: var(--card);
+  color: var(--text);
+}
+
+.cal-wrap {
+  overflow-x: auto;
+}
+
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 3px;
+  min-width: 280px;
+}
+
+.cal-header-cell {
+  text-align: center;
+  padding: 6px 2px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  background: rgba(0, 102, 255, 0.07);
+  border-radius: 6px;
+}
+
+.cal-day {
+  background: var(--card);
+  border-radius: 8px;
+  min-height: 60px;
+  padding: 4px;
+  overflow: hidden;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+}
+
+.cal-day.today {
+  outline: 2px solid var(--primary);
+}
+
+.cal-day.empty {
+  background: transparent;
+  box-shadow: none;
+}
+
+.cal-day-num {
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+
+.cal-leave-badge {
+  display: block;
+  background: #fee2e2;
+  color: #dc2626;
+  border-radius: 4px;
+  padding: 1px 4px;
+  font-size: 11px;
+  margin: 1px 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cal-punch-item {
+  display: block;
+  font-size: 11px;
+  color: var(--success);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 @media (max-width: 420px) {
   .name {
     font-size: 20px;

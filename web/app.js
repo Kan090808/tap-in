@@ -27,23 +27,52 @@ const ui = {
   registerBtn: document.getElementById("register-btn"),
   modePunchLink: document.getElementById("mode-punch-link"),
   modeRegisterLink: document.getElementById("mode-register-link"),
+  modeLeaveLink: document.getElementById("mode-leave-link"),
+  modeCalendarLink: document.getElementById("mode-calendar-link"),
+  calendarArea: document.getElementById("calendar-area"),
+  empCalPrev: document.getElementById("emp-cal-prev"),
+  empCalNext: document.getElementById("emp-cal-next"),
+  empCalYearSel: document.getElementById("emp-cal-year"),
+  empCalMonthSel: document.getElementById("emp-cal-month"),
+  empCalWrap: document.getElementById("emp-cal-wrap"),
+  leaveArea: document.getElementById("leave-area"),
+  leaveTypeSelect: document.getElementById("leave-type"),
+  leaveStartInput: document.getElementById("leave-start"),
+  leaveEndInput: document.getElementById("leave-end"),
+  leaveReasonTextarea: document.getElementById("leave-reason"),
+  leaveBtn: document.getElementById("leave-btn"),
   installBtn: document.getElementById("install-btn"),
   installHint: document.getElementById("install-hint")
 };
 
-function isRegisterMode() {
-  const url = new URL(window.location.href);
-  return (url.searchParams.get("mode") || "").trim().toLowerCase() === "register";
+function getPageMode() {
+  const mode = (new URL(window.location.href).searchParams.get("mode") || "").trim().toLowerCase();
+  if (mode === "register") return "register";
+  if (mode === "leave") return "leave";
+  if (mode === "calendar") return "calendar";
+  return "punch";
 }
 
-function setModeSwitchActive(registerMode) {
+function isRegisterMode() {
+  return getPageMode() === "register";
+}
+
+function setModeSwitchActive(mode) {
   if (ui.modePunchLink) {
-    ui.modePunchLink.classList.toggle("active", !registerMode);
-    ui.modePunchLink.setAttribute("aria-current", registerMode ? "false" : "page");
+    ui.modePunchLink.classList.toggle("active", mode === "punch");
+    ui.modePunchLink.setAttribute("aria-current", mode === "punch" ? "page" : "false");
   }
   if (ui.modeRegisterLink) {
-    ui.modeRegisterLink.classList.toggle("active", registerMode);
-    ui.modeRegisterLink.setAttribute("aria-current", registerMode ? "page" : "false");
+    ui.modeRegisterLink.classList.toggle("active", mode === "register");
+    ui.modeRegisterLink.setAttribute("aria-current", mode === "register" ? "page" : "false");
+  }
+  if (ui.modeLeaveLink) {
+    ui.modeLeaveLink.classList.toggle("active", mode === "leave");
+    ui.modeLeaveLink.setAttribute("aria-current", mode === "leave" ? "page" : "false");
+  }
+  if (ui.modeCalendarLink) {
+    ui.modeCalendarLink.classList.toggle("active", mode === "calendar");
+    ui.modeCalendarLink.setAttribute("aria-current", mode === "calendar" ? "page" : "false");
   }
 }
 
@@ -89,6 +118,10 @@ function setBusy(isBusy) {
   if (ui.registerBtn) {
     ui.registerBtn.disabled = isBusy;
     ui.registerBtn.textContent = isBusy ? "處理中..." : "註冊裝置";
+  }
+  if (ui.leaveBtn) {
+    ui.leaveBtn.disabled = isBusy;
+    ui.leaveBtn.textContent = isBusy ? "處理中..." : "送出請假申請";
   }
 }
 
@@ -351,6 +384,71 @@ async function submitPunch(payload) {
   setResult(resolvePunchMessage(result));
 }
 
+async function handleLeaveSubmit() {
+  const deviceUUID = getOrCreateDeviceUUID();
+  const leaveType = ui.leaveTypeSelect ? ui.leaveTypeSelect.value : "";
+  const startDate = ui.leaveStartInput ? ui.leaveStartInput.value : "";
+  const endDate = ui.leaveEndInput ? ui.leaveEndInput.value : "";
+  const reason = ui.leaveReasonTextarea ? ui.leaveReasonTextarea.value.trim() : "";
+
+  if (!leaveType) {
+    setResult("請選擇假別", true);
+    return;
+  }
+  if (!startDate) {
+    setResult("請選擇開始日期", true);
+    return;
+  }
+  if (!endDate) {
+    setResult("請選擇結束日期", true);
+    return;
+  }
+  if (endDate < startDate) {
+    setResult("結束日期不能早於開始日期", true);
+    return;
+  }
+  if (!reason) {
+    setResult("請填寫請假原因", true);
+    return;
+  }
+
+  setBusy(true);
+  setResult("");
+
+  try {
+    if (window.location.protocol !== "https:" && window.location.hostname !== "localhost") {
+      throw new Error("請使用 HTTPS 才能安全送出請假申請");
+    }
+    const requestTimestamp = await fetchNetworkTimestamp();
+
+    const payload = {
+      action: "submitLeave",
+      requestId: generateUUID(),
+      requestTimestamp: requestTimestamp,
+      deviceUUID: deviceUUID,
+      leaveType: leaveType,
+      startDate: startDate,
+      endDate: endDate,
+      reason: reason
+    };
+
+    setStatus("送出請假申請中...");
+    const result = await postToBackend(payload);
+    const employeeName = result.employeeName || "";
+    setStatus("送出完成");
+    setResult((employeeName ? employeeName + " " : "") + "請假申請已送出，等待主管審核");
+    if (ui.leaveTypeSelect) ui.leaveTypeSelect.value = "";
+    if (ui.leaveStartInput) ui.leaveStartInput.value = "";
+    if (ui.leaveEndInput) ui.leaveEndInput.value = "";
+    if (ui.leaveReasonTextarea) ui.leaveReasonTextarea.value = "";
+  } catch (error) {
+    setStatus("送出失敗");
+    setResult(error.message || "發生未知錯誤", true);
+  } finally {
+    setBusy(false);
+  }
+}
+
 async function handleRegister() {
   const deviceUUID = getOrCreateDeviceUUID();
   const name = String(ui.registerNameInput.value || "").trim();
@@ -434,6 +532,118 @@ async function handlePunch() {
   }
 }
 
+let empCalYear = new Date().getFullYear();
+let empCalMonth = new Date().getMonth() + 1;
+
+function initEmpCalSelects(year, month) {
+  const yearEl = ui.empCalYearSel;
+  const monthEl = ui.empCalMonthSel;
+  if (!yearEl || !monthEl) return;
+  const curYear = new Date().getFullYear();
+  yearEl.innerHTML = "";
+  for (let y = curYear - 5; y <= curYear + 5; y += 1) {
+    const opt = document.createElement("option");
+    opt.value = y;
+    opt.textContent = y + " 年";
+    if (y === year) opt.selected = true;
+    yearEl.appendChild(opt);
+  }
+  monthEl.innerHTML = "";
+  for (let m = 1; m <= 12; m += 1) {
+    const opt = document.createElement("option");
+    opt.value = m;
+    opt.textContent = m + " 月";
+    if (m === month) opt.selected = true;
+    monthEl.appendChild(opt);
+  }
+}
+
+function buildEmpCalendarHtml(year, month, dayContentFn) {
+  const today = new Date();
+  const todayStr =
+    today.getFullYear() +
+    "-" +
+    String(today.getMonth() + 1).padStart(2, "0") +
+    "-" +
+    String(today.getDate()).padStart(2, "0");
+
+  const firstDow = new Date(year, month - 1, 1).getDay();
+  const startOffset = (firstDow + 6) % 7;
+  const daysInMonth = new Date(year, month, 0).getDate();
+
+  const HEADERS = ["一", "二", "三", "四", "五", "六", "日"];
+  let html = '<div class="cal-grid">';
+  HEADERS.forEach(function (h) {
+    html += '<div class="cal-header-cell">' + h + "</div>";
+  });
+  for (let i = 0; i < startOffset; i += 1) {
+    html += '<div class="cal-day empty"></div>';
+  }
+  for (let d = 1; d <= daysInMonth; d += 1) {
+    const dateStr =
+      year +
+      "-" +
+      String(month).padStart(2, "0") +
+      "-" +
+      String(d).padStart(2, "0");
+    const isToday = dateStr === todayStr;
+    html += '<div class="cal-day' + (isToday ? " today" : "") + '">';
+    html += '<div class="cal-day-num">' + d + "</div>";
+    html += dayContentFn(dateStr);
+    html += "</div>";
+  }
+  html += "</div>";
+  return html;
+}
+
+function escapeHtmlEmp(text) {
+  return String(text == null ? "" : text)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+async function loadEmployeeCalendar() {
+  if (!ui.empCalWrap) return;
+  const deviceUUID = getOrCreateDeviceUUID();
+  setStatus("載入日曆中...");
+  try {
+    const data = await postToBackend({
+      action: "employeeGetCalendar",
+      deviceUUID: deviceUUID,
+      year: empCalYear,
+      month: empCalMonth
+    });
+    const punchesByDate = data.punchesByDate || {};
+    const leavesByDate = data.leavesByDate || {};
+    const locationLabel = { "Office": "辦公室", "office": "辦公室" };
+    ui.empCalWrap.innerHTML = buildEmpCalendarHtml(
+      empCalYear,
+      empCalMonth,
+      function (dateStr) {
+        let content = "";
+        const punches = punchesByDate[dateStr] || [];
+        punches.forEach(function (p) {
+          const loc = locationLabel[p.locationStatus] || "遠端";
+          content += '<span class="cal-punch-item">' + escapeHtmlEmp(p.time) + " " + loc + "</span>";
+        });
+        const leave = leavesByDate[dateStr];
+        if (leave) {
+          content += '<span class="cal-leave-badge">' + escapeHtmlEmp(leave.leaveType) + "</span>";
+        }
+        return content;
+      }
+    );
+    setStatus("日曆已更新");
+    setResult("");
+  } catch (error) {
+    setStatus("日曆載入失敗");
+    setResult(error.message || "未知錯誤", true);
+  }
+}
+
 async function initServiceWorker() {
   if (!("serviceWorker" in navigator)) {
     return;
@@ -447,9 +657,11 @@ async function initServiceWorker() {
 
 function initUI() {
   const deviceUUID = getOrCreateDeviceUUID();
-  const registerMode = isRegisterMode();
-  setModeSwitchActive(registerMode);
-  ui.nameText.textContent = registerMode ? "註冊模式" : "由系統自動識別";
+  const mode = getPageMode();
+  setModeSwitchActive(mode);
+
+  const modeLabels = { punch: "由系統自動識別", register: "註冊模式", leave: "請假模式", calendar: "日曆模式" };
+  ui.nameText.textContent = modeLabels[mode] || "由系統自動識別";
   ui.deviceText.textContent = `Device UUID: ${deviceUUID}`;
 
   if (!CONFIG.GAS_WEB_APP_URL) {
@@ -457,15 +669,22 @@ function initUI() {
   }
 
   if (ui.registerArea) {
-    ui.registerArea.hidden = !registerMode;
+    ui.registerArea.hidden = mode !== "register";
+  }
+  if (ui.leaveArea) {
+    ui.leaveArea.hidden = mode !== "leave";
+  }
+  if (ui.calendarArea) {
+    ui.calendarArea.hidden = mode !== "calendar";
   }
   if (ui.punchBtn) {
-    ui.punchBtn.hidden = registerMode;
+    ui.punchBtn.hidden = mode !== "punch";
   }
 
   refreshHintStatus();
   initInstallEntry();
-  if (registerMode) {
+
+  if (mode === "register") {
     if (!ui.registerBtn || !ui.registerNameInput) {
       setStatus("註冊模式初始化失敗");
       setResult("請重新整理頁面後再試", true);
@@ -482,24 +701,76 @@ function initUI() {
     return;
   }
 
+  if (mode === "leave") {
+    if (!ui.leaveBtn) {
+      setStatus("請假模式初始化失敗");
+      setResult("請重新整理頁面後再試", true);
+      return;
+    }
+    setStatus("請填寫請假資訊後送出");
+    ui.leaveBtn.addEventListener("click", handleLeaveSubmit);
+    return;
+  }
+
+  if (mode === "calendar") {
+    initEmpCalSelects(empCalYear, empCalMonth);
+    if (ui.empCalPrev) {
+      ui.empCalPrev.addEventListener("click", function () {
+        empCalMonth -= 1;
+        if (empCalMonth < 1) { empCalMonth = 12; empCalYear -= 1; }
+        if (ui.empCalYearSel) ui.empCalYearSel.value = empCalYear;
+        if (ui.empCalMonthSel) ui.empCalMonthSel.value = empCalMonth;
+        loadEmployeeCalendar();
+      });
+    }
+    if (ui.empCalNext) {
+      ui.empCalNext.addEventListener("click", function () {
+        empCalMonth += 1;
+        if (empCalMonth > 12) { empCalMonth = 1; empCalYear += 1; }
+        if (ui.empCalYearSel) ui.empCalYearSel.value = empCalYear;
+        if (ui.empCalMonthSel) ui.empCalMonthSel.value = empCalMonth;
+        loadEmployeeCalendar();
+      });
+    }
+    if (ui.empCalYearSel) {
+      ui.empCalYearSel.addEventListener("change", function () {
+        empCalYear = Number(ui.empCalYearSel.value);
+        loadEmployeeCalendar();
+      });
+    }
+    if (ui.empCalMonthSel) {
+      ui.empCalMonthSel.addEventListener("change", function () {
+        empCalMonth = Number(ui.empCalMonthSel.value);
+        loadEmployeeCalendar();
+      });
+    }
+    loadEmployeeCalendar();
+    return;
+  }
+
   ui.punchBtn.addEventListener("click", handlePunch);
 }
 
 async function bootstrap() {
-  const registerMode = isRegisterMode();
+  const mode = getPageMode();
   initUI();
   initServiceWorker();
+  if (mode === "calendar") return;
   if (CONFIG.GAS_WEB_APP_URL) {
     try {
       await fetchPublicConfig();
-      if (registerMode) {
+      if (mode === "register") {
         setStatus("請輸入姓名註冊此裝置");
+      } else if (mode === "leave") {
+        setStatus("請填寫請假資訊後送出");
       } else {
         refreshHintStatus();
       }
     } catch (_error) {
-      if (registerMode) {
+      if (mode === "register") {
         setStatus("請輸入姓名註冊此裝置");
+      } else if (mode === "leave") {
+        setStatus("請填寫請假資訊後送出");
       } else {
         refreshHintStatus();
       }
