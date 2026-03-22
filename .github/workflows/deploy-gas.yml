@@ -1,0 +1,27 @@
+name: Deploy GAS Backend
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "gas/**"
+      - ".github/workflows/deploy-gas.yml"
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install clasp
+        run: npm install -g @google/clasp
+
+      - name: Authenticate clasp
+        run: echo '${{ secrets.CLASPRC_JSON }}' > ~/.clasprc.json
+
+      - name: Push to GAS
+        working-directory: gas
+        run: clasp push --force
