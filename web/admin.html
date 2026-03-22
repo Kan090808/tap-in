@@ -59,6 +59,10 @@
             GPS 精度上限（公尺）
             <input id="max-gps-input" type="number" min="1" required />
           </label>
+          <label>
+            請假 Sheet 名稱
+            <input id="leave-sheet-name-input" type="text" required />
+          </label>
           <button id="save-config-btn" type="submit" class="primary-btn">儲存設定</button>
         </form>
 
@@ -89,6 +93,38 @@
               </tr>
             </thead>
             <tbody id="logs-body"></tbody>
+          </table>
+        </div>
+
+        <div class="log-tools">
+          <h2>請假審核</h2>
+          <div class="log-actions">
+            <select id="leave-status-select">
+              <option value="pending">待審核</option>
+              <option value="all">全部</option>
+              <option value="approved">已批准</option>
+              <option value="rejected">已拒絕</option>
+            </select>
+            <button id="reload-leave-btn" type="button" class="ghost-btn">重新整理</button>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>申請 ID</th>
+                <th>員工</th>
+                <th>假別</th>
+                <th>開始日期</th>
+                <th>結束日期</th>
+                <th>原因</th>
+                <th>狀態</th>
+                <th>送出時間</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="leave-body"></tbody>
           </table>
         </div>
       </section>

@@ -21,9 +21,13 @@ const ui = {
   logSheetNameInput: document.getElementById("log-sheet-name-input"),
   bindingSheetNameInput: document.getElementById("binding-sheet-name-input"),
   maxGpsInput: document.getElementById("max-gps-input"),
+  leaveSheetNameInput: document.getElementById("leave-sheet-name-input"),
   reloadLogsBtn: document.getElementById("reload-logs-btn"),
   limitSelect: document.getElementById("limit-select"),
   logsBody: document.getElementById("logs-body"),
+  leaveStatusSelect: document.getElementById("leave-status-select"),
+  reloadLeaveBtn: document.getElementById("reload-leave-btn"),
+  leaveBody: document.getElementById("leave-body"),
   statusText: document.getElementById("admin-status"),
   resultText: document.getElementById("admin-result")
 };
@@ -91,6 +95,9 @@ function fillConfig(config) {
   ui.logSheetNameInput.value = config.logSheetName || "";
   ui.bindingSheetNameInput.value = config.bindingSheetName || "";
   ui.maxGpsInput.value = config.maxGpsAccuracyMeters || "";
+  if (ui.leaveSheetNameInput) {
+    ui.leaveSheetNameInput.value = config.leaveSheetName || "";
+  }
 }
 
 function renderLogs(logs) {
@@ -161,7 +168,8 @@ async function saveConfig() {
     officeStaticIp: ui.officeIpInput.value.trim(),
     logSheetName: ui.logSheetNameInput.value.trim(),
     bindingSheetName: ui.bindingSheetNameInput.value.trim(),
-    maxGpsAccuracyMeters: Number(ui.maxGpsInput.value)
+    maxGpsAccuracyMeters: Number(ui.maxGpsInput.value),
+    leaveSheetName: ui.leaveSheetNameInput ? ui.leaveSheetNameInput.value.trim() : ""
   };
   const data = await postApi(payload);
   fillConfig(data.config);
@@ -174,6 +182,58 @@ async function loadLogs() {
   renderLogs(data.logs || []);
 }
 
+async function loadLeaveRequests() {
+  const token = getToken();
+  const status = ui.leaveStatusSelect ? ui.leaveStatusSelect.value : "pending";
+  const data = await postApi({ action: "adminGetLeaveRequests", token: token, status: status, limit: 100 });
+  renderLeaveTable(data.leaves || []);
+}
+
+function renderLeaveTable(leaves) {
+  if (!ui.leaveBody) return;
+  if (!leaves.length) {
+    ui.leaveBody.innerHTML = '<tr><td colspan="9">目前沒有資料</td></tr>';
+    return;
+  }
+  const statusLabels = { pending: "待審核", approved: "已批准", rejected: "已拒絕" };
+  ui.leaveBody.innerHTML = leaves
+    .map((item) => {
+      const statusLabel = statusLabels[item.status] || escapeHtml(item.status);
+      const actionCell =
+        item.status === "pending"
+          ? `<button class="ghost-btn" onclick="handleLeaveAction('${escapeHtml(item.requestId)}','approved')">批准</button>
+             <button class="ghost-btn" onclick="handleLeaveAction('${escapeHtml(item.requestId)}','rejected')">拒絕</button>`
+          : statusLabel;
+      const shortId = escapeHtml(item.requestId).slice(0, 8) + "…";
+      return `<tr>
+        <td title="${escapeHtml(item.requestId)}">${shortId}</td>
+        <td>${escapeHtml(item.employeeName)}</td>
+        <td>${escapeHtml(item.leaveType)}</td>
+        <td>${escapeHtml(item.startDate)}</td>
+        <td>${escapeHtml(item.endDate)}</td>
+        <td>${escapeHtml(item.reason)}</td>
+        <td>${statusLabel}</td>
+        <td>${escapeHtml(item.submittedAt)}</td>
+        <td>${actionCell}</td>
+      </tr>`;
+    })
+    .join("");
+}
+
+async function handleLeaveAction(requestId, status) {
+  try {
+    setStatus(status === "approved" ? "批准中..." : "拒絕中...");
+    const token = getToken();
+    await postApi({ action: "adminUpdateLeaveStatus", token: token, requestId: requestId, status: status });
+    setStatus(status === "approved" ? "已批准" : "已拒絕");
+    setResult("");
+    await loadLeaveRequests();
+  } catch (error) {
+    setStatus("操作失敗");
+    setResult(error.message || "未知錯誤", true);
+  }
+}
+
 async function enterDashboard() {
   try {
     showDashboard(true);
@@ -181,6 +241,8 @@ async function enterDashboard() {
     await loadConfig();
     setStatus("讀取打卡紀錄中...");
     await loadLogs();
+    setStatus("讀取請假申請中...");
+    await loadLeaveRequests();
     setStatus("管理頁已就緒");
     setResult("");
   } catch (error) {
@@ -249,6 +311,34 @@ function bindEvents() {
       setResult(error.message || "未知錯誤", true);
     }
   });
+
+  if (ui.reloadLeaveBtn) {
+    ui.reloadLeaveBtn.addEventListener("click", async () => {
+      try {
+        setStatus("載入請假申請中...");
+        await loadLeaveRequests();
+        setStatus("請假申請已更新");
+        setResult("");
+      } catch (error) {
+        setStatus("載入失敗");
+        setResult(error.message || "未知錯誤", true);
+      }
+    });
+  }
+
+  if (ui.leaveStatusSelect) {
+    ui.leaveStatusSelect.addEventListener("change", async () => {
+      try {
+        setStatus("載入請假申請中...");
+        await loadLeaveRequests();
+        setStatus("請假申請已更新");
+        setResult("");
+      } catch (error) {
+        setStatus("載入失敗");
+        setResult(error.message || "未知錯誤", true);
+      }
+    });
+  }
 }
 
 async function bootstrap() {
