@@ -8,7 +8,7 @@
   background: #ffffff;
   border-radius: 18px;
   padding: 16px;
-  box-shadow: 0 10px 28px rgba(0, 102, 255, 0.08);
+  box-shadow: 0 4px 18px rgba(33, 78, 60, 0.06);
   margin-bottom: 14px;
 }
 
@@ -35,13 +35,13 @@
   display: grid;
   gap: 6px;
   font-size: 14px;
-  color: #334155;
+  color: #304a42;
 }
 
 .admin-form input,
 .log-actions select {
   width: 100%;
-  border: 1px solid rgba(15, 23, 42, 0.16);
+  border: 1px solid #d7e5df;
   border-radius: 12px;
   min-height: 42px;
   padding: 0 12px;
@@ -50,7 +50,7 @@
 
 .primary-btn {
   border: none;
-  background: #0066ff;
+  background: var(--primary, #16816a);
   color: #ffffff;
   border-radius: 12px;
   min-height: 44px;
@@ -81,7 +81,7 @@
 .table-wrap {
   margin-top: 12px;
   overflow: auto;
-  border: 1px solid rgba(15, 23, 42, 0.12);
+  border: 1px solid #e3ece9;
   border-radius: 12px;
 }
 
@@ -95,13 +95,13 @@ th,
 td {
   text-align: left;
   padding: 10px;
-  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+  border-bottom: 1px solid #edf2ef;
   font-size: 13px;
   white-space: nowrap;
 }
 
 th {
-  background: #f1f5ff;
+  background: #eef6f2;
 }
 
 .status-card {
@@ -109,7 +109,7 @@ th {
 }
 
 .ghost-btn {
-  border: 1px solid rgba(15, 23, 42, 0.16);
+  border: 1px solid #d7e5df;
   background: #ffffff;
   border-radius: 10px;
   min-height: 36px;
@@ -120,7 +120,7 @@ th {
 }
 
 .ghost-btn:hover {
-  background: #f1f5ff;
+  background: #eef6f2;
 }
 
 .cal-nav-actions select {
@@ -145,13 +145,13 @@ th {
   padding: 6px 2px;
   font-size: 12px;
   font-weight: 700;
-  color: #64748b;
-  background: #f1f5ff;
+  color: #718780;
+  background: #eef6f2;
   border-radius: 6px;
 }
 
 .cal-day {
-  background: #fafcff;
+  background: #f8fbfa;
   border-radius: 8px;
   min-height: 60px;
   padding: 4px;
@@ -159,7 +159,7 @@ th {
 }
 
 .cal-day.today {
-  outline: 2px solid #0066ff;
+  outline: 2px solid var(--primary, #16816a);
 }
 
 .cal-day.empty {
@@ -199,4 +199,39 @@ th {
   .log-actions button {
     flex: 1;
   }
+}
+
+.admin-headline h2,
+.log-tools h2,
+#login-panel h2 {
+  color: #203932;
+}
+
+.admin-form input,
+.log-actions select {
+  background: #fff;
+  color: #203932;
+}
+
+.admin-form input:focus-visible,
+.log-actions select:focus-visible {
+  outline: 2px solid #16816a;
+  outline-offset: 2px;
+  border-color: #16816a;
+}
+
+.primary-btn:hover {
+  background: #126b58;
+}
+
+.ghost-btn {
+  color: #304a42;
+}
+
+th {
+  color: #718780;
+}
+
+tbody tr:hover {
+  background: #f8fbfa;
 }

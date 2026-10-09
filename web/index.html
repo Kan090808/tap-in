@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://api.ipify.org https://script.google.com https://script.googleusercontent.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'" />
     <meta name="referrer" content="strict-origin-when-cross-origin" />
-    <meta name="theme-color" content="#0066FF" />
+    <meta name="theme-color" content="#16816a" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="TapIn" />
@@ -24,7 +24,7 @@
     <main id="portal-app" class="app portal-app">
       <header class="topbar">
         <div>
-          <h1>TapIn</h1>
+          <h1 class="brand-wordmark" aria-label="TapIn">tap<span>in</span></h1>
           <p class="topbar-subtitle">Attendance and administration</p>
         </div>
         <div class="topbar-actions">
@@ -163,8 +163,8 @@
 
           <form id="config-form" class="admin-form">
             <label>
-              Google Sheet ID
-              <input id="spreadsheet-id-input" type="text" required />
+              Google Sheet link or ID
+              <input id="spreadsheet-id-input" type="text" placeholder="Paste a Google Sheets link or ID" required />
             </label>
             <label>
               Office static IP

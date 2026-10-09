@@ -235,7 +235,8 @@ function handleAdminGetConfig_(request, runtimeConfig) {
 function handleAdminUpdateConfig_(request, runtimeConfig) {
   const adminUsername = requireAdminSession_(request);
 
-  const nextSpreadsheetId = normalizeText_(request.spreadsheetId) || runtimeConfig.spreadsheetId;
+  const requestedSpreadsheet = normalizeText_(request.spreadsheetId);
+  const nextSpreadsheetId = requestedSpreadsheet ? parseSpreadsheetId_(requestedSpreadsheet) : runtimeConfig.spreadsheetId;
   const nextOfficeStaticIp = normalizeText_(request.officeStaticIp) || runtimeConfig.officeStaticIp;
   const nextLogSheetName = normalizeText_(request.logSheetName) || runtimeConfig.logSheetName;
   const nextBindingSheetName = normalizeText_(request.bindingSheetName) || runtimeConfig.bindingSheetName;
@@ -1264,6 +1265,14 @@ function setAdminSessions_(sessions) {
 
 function normalizeText_(value) {
   return String(value == null ? "" : value).trim();
+}
+
+function parseSpreadsheetId_(value) {
+  const input = normalizeText_(value);
+  if (/^[A-Za-z0-9_-]+$/.test(input)) return input;
+  const match = input.match(/^(?:https:\/\/)?docs\.google\.com\/spreadsheets\/d\/([A-Za-z0-9_-]+)(?:[/?#]|$)/i);
+  if (match) return match[1];
+  throw new Error("Enter a valid Google Sheets link or ID");
 }
 
 function normalizeLeaveType_(value) {

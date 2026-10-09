@@ -1086,6 +1086,23 @@ function fillConfig(config) {
   if (ui.leaveSheetNameInput) ui.leaveSheetNameInput.value = config.leaveSheetName || "";
 }
 
+function parseSpreadsheetId(value) {
+  const input = String(value || "").trim();
+  if (/^[A-Za-z0-9_-]+$/.test(input)) return input;
+
+  let url;
+  try {
+    url = new URL(/^docs\.google\.com\//i.test(input) ? "https://" + input : input);
+  } catch (_error) {
+    throw new Error("Enter a valid Google Sheets link or ID");
+  }
+  const match = url.pathname.match(/^\/spreadsheets\/d\/([A-Za-z0-9_-]+)(?:\/|$)/);
+  if (url.protocol !== "https:" || url.hostname !== "docs.google.com" || !match) {
+    throw new Error("Enter a valid Google Sheets link or ID");
+  }
+  return match[1];
+}
+
 async function loadConfig() {
   const data = await postToBackend({
     action: "adminGetConfig",
@@ -1176,10 +1193,12 @@ async function saveEmployee() {
 }
 
 async function saveConfig() {
+  const spreadsheetId = parseSpreadsheetId(ui.spreadsheetIdInput ? ui.spreadsheetIdInput.value : "");
+  if (ui.spreadsheetIdInput) ui.spreadsheetIdInput.value = spreadsheetId;
   const data = await postToBackend({
     action: "adminUpdateConfig",
     token: getAdminToken(),
-    spreadsheetId: ui.spreadsheetIdInput ? ui.spreadsheetIdInput.value.trim() : "",
+    spreadsheetId: spreadsheetId,
     officeStaticIp: ui.officeIpInput ? ui.officeIpInput.value.trim() : "",
     logSheetName: ui.logSheetNameInput ? ui.logSheetNameInput.value.trim() : "",
     bindingSheetName: ui.bindingSheetNameInput ? ui.bindingSheetNameInput.value.trim() : "",
@@ -1564,6 +1583,19 @@ function bindEvents() {
   }
 
   if (ui.configForm) {
+    if (ui.spreadsheetIdInput) {
+      ui.spreadsheetIdInput.addEventListener("paste", function (event) {
+        const pastedText = event.clipboardData ? event.clipboardData.getData("text") : "";
+        if (!pastedText) return;
+        try {
+          const spreadsheetId = parseSpreadsheetId(pastedText);
+          event.preventDefault();
+          ui.spreadsheetIdInput.value = spreadsheetId;
+        } catch (_error) {
+          // Keep the pasted text so the user can correct it; validate on save.
+        }
+      });
+    }
     ui.configForm.addEventListener("submit", async function (event) {
       event.preventDefault();
       try {
