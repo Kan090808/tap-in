@@ -25,3 +25,6 @@ jobs:
 
       - name: Push to GAS
         run: clasp push --force
+
+      - name: Update production web app
+        run: clasp deploy --deploymentId AKfycbwwOzhR410RuhM3RuXx8MLvIcVRqGFtqzlcWQhiATv419fxnS2079eaF0AlUf1N6cPd5A --description "Production ${{ github.sha }}"
