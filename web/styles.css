@@ -41,6 +41,11 @@ body {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 12px;
+  gap: 12px;
+  padding: 16px 18px;
+  border-radius: 16px;
+  background: #173e35;
+  color: #edf7f3;
 }
 
 .topbar h1 {
@@ -50,19 +55,38 @@ body {
 }
 
 .topbar .brand-wordmark {
-  color: var(--text);
+  color: #edf7f3;
   font-weight: 800;
   letter-spacing: -0.05em;
 }
 
 .brand-wordmark span {
-  color: var(--primary);
+  color: #74d1b0;
 }
 
 .topbar-subtitle {
   margin: 4px 0 0;
   font-size: 13px;
-  color: var(--muted);
+  color: #aec6bc;
+}
+
+.topbar .ghost-btn {
+  border-color: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.08);
+  color: #edf7f3;
+}
+
+.topbar .ghost-btn:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.topbar .role-badge {
+  background: rgba(116, 209, 176, 0.16);
+  color: #a0e5cc;
+}
+
+.topbar :focus-visible {
+  outline-color: #74d1b0;
 }
 
 .topbar-actions {
