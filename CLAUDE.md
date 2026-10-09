@@ -104,6 +104,7 @@ window.TAPIN_CONFIG = {
 
 ## Coding Conventions
 
+- All user-facing website copy must be in English only, including labels, status messages, errors, and PWA metadata. The temporary admin credential reset feature is exempt until it is removed.
 - Vanilla JS only — no frameworks, no bundlers
 - Mobile-first CSS
 - All time-sensitive operations use server time from GAS (not client clock)

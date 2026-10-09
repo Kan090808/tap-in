@@ -61,12 +61,20 @@ function doPost(e) {
       return handleAdminGetLogs_(request, runtimeConfig);
     }
 
-    if (action === "punch") {
-      return handlePunch_(request, runtimeConfig);
+    if (action === "adminGetEmployees") {
+      return handleAdminGetEmployees_(request, runtimeConfig);
     }
 
-    if (action === "registerDevice") {
-      return handleRegisterDevice_(request, runtimeConfig);
+    if (action === "adminSaveEmployee") {
+      return handleAdminSaveEmployee_(request, runtimeConfig);
+    }
+
+    if (action === "adminDeleteEmployee") {
+      return handleAdminDeleteEmployee_(request, runtimeConfig);
+    }
+
+    if (action === "punch") {
+      return handlePunch_(request, runtimeConfig);
     }
 
     if (action === "submitLeave") {
@@ -130,7 +138,7 @@ function handlePunch_(request, runtimeConfig) {
 
   const binding = findBindingByDeviceUUID_(runtimeConfig, request.deviceUUID);
   if (!binding.employeeName) {
-    throw new Error("此裝置尚未註冊，請先掃描 QR Code 註冊");
+    throw new Error("This device is not registered. Please send your Device ID to an administrator.");
   }
   const employeeName = binding.employeeName;
 
@@ -152,36 +160,7 @@ function handlePunch_(request, runtimeConfig) {
     locationStatus: locationStatus,
     isRegistered: true,
     employeeName: employeeName,
-    punchMessage: employeeName + " 打卡成功"
-  });
-}
-
-function handleRegisterDevice_(request, runtimeConfig) {
-  validateRegisterRequest_(request);
-  requireFreshRequest_(request, "registerDevice", DEFAULT_CONFIG.REQUEST_FRESHNESS_WINDOW_MS);
-
-  assertEmployeeExistsInRoster_(runtimeConfig, request.name);
-
-  const deviceBinding = findBindingByDeviceUUID_(runtimeConfig, request.deviceUUID);
-  if (deviceBinding.employeeName) {
-    throw new Error("此裝置已綁定姓名，請聯絡管理員移除後再註冊");
-  }
-
-  const nameBinding = findBindingByEmployeeName_(runtimeConfig, request.name);
-  if (nameBinding.deviceUUID) {
-    throw new Error("此姓名已綁定裝置，請聯絡管理員移除後再註冊");
-  }
-
-  const sheet = getOrCreateSheet_(runtimeConfig, runtimeConfig.bindingSheetName, [
-    "Employee Name",
-    "Device UUID",
-    "Bound At"
-  ]);
-  sheet.appendRow([request.name, request.deviceUUID, new Date().toISOString()]);
-
-  return jsonResponse_(true, "Register success", {
-    employeeName: request.name,
-    registerMessage: request.name + " 註冊成功"
+    punchMessage: employeeName + " punched in successfully"
   });
 }
 
@@ -375,13 +354,191 @@ function handleAdminGetLogs_(request, runtimeConfig) {
   return jsonResponse_(true, "Logs loaded", { logs: logs });
 }
 
+function handleAdminGetEmployees_(request, runtimeConfig) {
+  requireAdminSession_(request);
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    return jsonResponse_(true, "Employees loaded", {
+      employees: readEmployees_(getEmployeeSheet_(runtimeConfig), runtimeConfig).map(publicEmployee_)
+    });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function handleAdminSaveEmployee_(request, runtimeConfig) {
+  const adminUsername = requireAdminSession_(request);
+  const employeeId = normalizeText_(request.employeeId);
+  const name = normalizeText_(request.name);
+  const phone = normalizeText_(request.phone);
+  const email = normalizeText_(request.email);
+  const deviceUUID = normalizeText_(request.deviceUUID);
+  if (!name) throw new Error("Employee name is required");
+  if ([name, phone, email, deviceUUID].some(function (value) { return value.charAt(0) === "="; })) {
+    throw new Error("Invalid employee field");
+  }
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new Error("Invalid email address");
+  }
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const sheet = getEmployeeSheet_(runtimeConfig);
+    const employees = readEmployees_(sheet, runtimeConfig);
+    const existing = employees.filter(function (item) { return item.employeeId === employeeId; })[0];
+    if (employeeId && !existing) throw new Error("Employee not found. Refresh the list and try again.");
+    for (let i = 0; i < employees.length; i += 1) {
+      const item = employees[i];
+      if (existing && item.employeeId === existing.employeeId) continue;
+      if (item.name === name) throw new Error("An employee with this name already exists");
+      if (deviceUUID && item.deviceUUID === deviceUUID) throw new Error("This Device ID is already assigned to another employee");
+    }
+
+    const bindingSheet = getOrCreateSheet_(runtimeConfig, runtimeConfig.bindingSheetName, [
+      "Employee Name", "Device UUID", "Bound At"
+    ]);
+    const bindingRows = bindingSheet.getLastRow() > 1
+      ? bindingSheet.getRange(2, 1, bindingSheet.getLastRow() - 1, 2).getValues() : [];
+    for (let i = 0; i < bindingRows.length; i += 1) {
+      const boundName = normalizeText_(bindingRows[i][0]);
+      const boundDevice = normalizeText_(bindingRows[i][1]);
+      if (deviceUUID && boundDevice === deviceUUID && (!existing || boundName !== existing.name)) {
+        throw new Error("This Device ID is already assigned to another employee");
+      }
+    }
+
+    const saved = {
+      employeeId: existing ? existing.employeeId : Utilities.getUuid(),
+      name: name,
+      phone: phone,
+      email: email,
+      deviceUUID: deviceUUID
+    };
+    const rowValues = [saved.name, saved.phone, saved.email, saved.deviceUUID, saved.employeeId];
+    if (existing) {
+      sheet.getRange(existing.rowNumber, 1, 1, 5).setValues([rowValues]);
+    } else {
+      sheet.appendRow(rowValues);
+    }
+    removeEmployeeBindings_(bindingSheet, existing ? existing.name : "", existing ? existing.deviceUUID : "");
+    if (deviceUUID) bindingSheet.appendRow([name, deviceUUID, new Date().toISOString()]);
+    appendAuditLogSafe_(runtimeConfig, {
+      eventType: existing ? "EMPLOYEE_UPDATED" : "EMPLOYEE_CREATED",
+      username: adminUsername,
+      detail: "EmployeeID=" + saved.employeeId + " Name=" + name
+    });
+    return jsonResponse_(true, "Employee saved", { employee: saved });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function handleAdminDeleteEmployee_(request, runtimeConfig) {
+  const adminUsername = requireAdminSession_(request);
+  const employeeId = normalizeText_(request.employeeId);
+  if (!employeeId) throw new Error("Employee ID is required");
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const sheet = getEmployeeSheet_(runtimeConfig);
+    const employee = readEmployees_(sheet, runtimeConfig).filter(function (item) {
+      return item.employeeId === employeeId;
+    })[0];
+    if (!employee) throw new Error("Employee not found. Refresh the list and try again.");
+    const bindingSheet = getSheetIfExists_(runtimeConfig, runtimeConfig.bindingSheetName);
+    if (bindingSheet) removeEmployeeBindings_(bindingSheet, employee.name, employee.deviceUUID);
+    sheet.deleteRow(employee.rowNumber);
+    appendAuditLogSafe_(runtimeConfig, {
+      eventType: "EMPLOYEE_DELETED",
+      username: adminUsername,
+      detail: "EmployeeID=" + employeeId + " Name=" + employee.name
+    });
+    return jsonResponse_(true, "Employee deleted", { employeeId: employeeId });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function getEmployeeSheet_(runtimeConfig) {
+  const headers = ["Employee Name", "Phone", "Email", "Device UUID", "Employee ID"];
+  const sheet = getOrCreateSheet_(runtimeConfig, runtimeConfig.employeeSheetName, headers);
+  const firstCell = normalizeText_(sheet.getRange(1, 1).getValue());
+  if (firstCell !== "Employee Name" && firstCell !== "Name") sheet.insertRowBefore(1);
+  sheet.getRange(1, 1, 1, 5).setValues([headers]);
+  return sheet;
+}
+
+function readEmployees_(sheet, runtimeConfig) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+  const values = sheet.getRange(2, 1, lastRow - 1, 5).getValues();
+  const bindingSheet = getSheetIfExists_(runtimeConfig, runtimeConfig.bindingSheetName);
+  const bindingValues = bindingSheet && bindingSheet.getLastRow() > 1
+    ? bindingSheet.getRange(2, 1, bindingSheet.getLastRow() - 1, 2).getValues() : [];
+  const bindingsByName = {};
+  for (let i = 0; i < bindingValues.length; i += 1) {
+    const name = normalizeText_(bindingValues[i][0]);
+    const deviceUUID = normalizeText_(bindingValues[i][1]);
+    if (name && deviceUUID) bindingsByName[name] = deviceUUID;
+  }
+  const employees = [];
+  for (let i = 0; i < values.length; i += 1) {
+    const name = normalizeText_(values[i][0]);
+    if (!name) continue;
+    const rowNumber = i + 2;
+    let deviceUUID = normalizeText_(values[i][3]);
+    let employeeId = normalizeText_(values[i][4]);
+    if (!deviceUUID && bindingsByName[name]) {
+      deviceUUID = bindingsByName[name];
+      sheet.getRange(rowNumber, 4).setValue(deviceUUID);
+    }
+    if (!employeeId) {
+      employeeId = Utilities.getUuid();
+      sheet.getRange(rowNumber, 5).setValue(employeeId);
+    }
+    employees.push({
+      employeeId: employeeId,
+      name: name,
+      phone: normalizeText_(values[i][1]),
+      email: normalizeText_(values[i][2]),
+      deviceUUID: deviceUUID,
+      rowNumber: rowNumber
+    });
+  }
+  return employees;
+}
+
+function publicEmployee_(employee) {
+  return {
+    employeeId: employee.employeeId,
+    name: employee.name,
+    phone: employee.phone,
+    email: employee.email,
+    deviceUUID: employee.deviceUUID
+  };
+}
+
+function removeEmployeeBindings_(sheet, employeeName, deviceUUID) {
+  if (sheet.getLastRow() < 2) return;
+  const values = sheet.getRange(2, 1, sheet.getLastRow() - 1, 2).getValues();
+  for (let i = values.length - 1; i >= 0; i -= 1) {
+    const name = normalizeText_(values[i][0]);
+    const uuid = normalizeText_(values[i][1]);
+    if ((employeeName && name === employeeName) || (deviceUUID && uuid === deviceUUID)) {
+      sheet.deleteRow(i + 2);
+    }
+  }
+}
+
 function handleSubmitLeave_(request, runtimeConfig) {
   validateLeaveRequest_(request);
   requireFreshRequest_(request, "submitLeave", DEFAULT_CONFIG.REQUEST_FRESHNESS_WINDOW_MS);
 
   const binding = findBindingByDeviceUUID_(runtimeConfig, request.deviceUUID);
   if (!binding.employeeName) {
-    throw new Error("此裝置尚未註冊，請先掃描 QR Code 註冊");
+    throw new Error("This device is not registered. Please send your Device ID to an administrator.");
   }
 
   const leaveSheet = getOrCreateSheet_(runtimeConfig, runtimeConfig.leaveSheetName, [
@@ -402,7 +559,7 @@ function handleSubmitLeave_(request, runtimeConfig) {
     "", "", ""
   ]);
 
-  return jsonResponse_(true, "請假申請已送出", {
+  return jsonResponse_(true, "Leave request submitted", {
     employeeName: binding.employeeName,
     requestId: request.requestId
   });
@@ -427,27 +584,28 @@ function validateLeaveRequest_(request) {
     throw new Error("Missing request timestamp");
   }
 
-  const validLeaveTypes = ["病假", "事假", "特休", "其他"];
-  if (validLeaveTypes.indexOf(leaveType) === -1) {
-    throw new Error("無效的假別");
+  const normalizedLeaveType = normalizeLeaveType_(leaveType);
+  const validLeaveTypes = ["sick", "personal", "annual", "other"];
+  if (validLeaveTypes.indexOf(normalizedLeaveType) === -1) {
+    throw new Error("Invalid leave type");
   }
 
   const datePattern = /^\d{4}-\d{2}-\d{2}$/;
   if (!datePattern.test(startDate) || isNaN(new Date(startDate).getTime())) {
-    throw new Error("無效的開始日期");
+    throw new Error("Invalid start date");
   }
   if (!datePattern.test(endDate) || isNaN(new Date(endDate).getTime())) {
-    throw new Error("無效的結束日期");
+    throw new Error("Invalid end date");
   }
   if (endDate < startDate) {
-    throw new Error("結束日期不能早於開始日期");
+    throw new Error("End date cannot be before start date");
   }
   if (!reason) {
-    throw new Error("請假原因不能為空");
+    throw new Error("Leave reason is required");
   }
 
   request.deviceUUID = deviceUUID;
-  request.leaveType = leaveType;
+  request.leaveType = normalizedLeaveType;
   request.startDate = startDate;
   request.endDate = endDate;
   request.reason = reason;
@@ -481,7 +639,7 @@ function handleAdminGetLeaveRequests_(request, runtimeConfig) {
       requestId: normalizeText_(row[0]),
       employeeName: normalizeText_(row[1]),
       deviceUUID: normalizeText_(row[2]),
-      leaveType: normalizeText_(row[3]),
+      leaveType: normalizeLeaveType_(row[3]),
       startDate: normalizeText_(row[4]),
       endDate: normalizeText_(row[5]),
       reason: normalizeText_(row[6]),
@@ -534,7 +692,7 @@ function handleAdminUpdateLeaveStatus_(request, runtimeConfig) {
     }
   }
   if (targetRow === -1) {
-    throw new Error("找不到此請假申請");
+    throw new Error("Leave request not found");
   }
 
   const now = new Date().toISOString();
@@ -549,7 +707,7 @@ function handleAdminUpdateLeaveStatus_(request, runtimeConfig) {
     detail: "RequestID=" + requestId + " Status=" + newStatus
   });
 
-  return jsonResponse_(true, "已更新", { requestId: requestId, status: newStatus });
+  return jsonResponse_(true, "Updated", { requestId: requestId, status: newStatus });
 }
 
 function pad2_(n) {
@@ -611,7 +769,7 @@ function handleEmployeeGetCalendar_(request, runtimeConfig) {
   }
   const binding = findBindingByDeviceUUID_(runtimeConfig, deviceUUID);
   if (!binding.employeeName) {
-    throw new Error("此裝置尚未註冊，請先掃描 QR Code 註冊");
+    throw new Error("This device is not registered. Please send your Device ID to an administrator.");
   }
   const employeeName = binding.employeeName;
 
@@ -660,7 +818,7 @@ function handleEmployeeGetCalendar_(request, runtimeConfig) {
         const empName = normalizeText_(values[i][1]);
         const status = normalizeText_(values[i][7]);
         if (empName !== employeeName || status !== "approved") continue;
-        const leaveType = normalizeText_(values[i][3]);
+        const leaveType = normalizeLeaveType_(values[i][3]);
         const start = normalizeText_(values[i][4]);
         const end = normalizeText_(values[i][5]);
         if (!start || !end || end < firstDay || start > lastDay) continue;
@@ -756,36 +914,6 @@ function validatePunchRequest_(request, runtimeConfig) {
   request.originHost = originHost;
 }
 
-function validateRegisterRequest_(request) {
-  const name = normalizeText_(request.name);
-  const deviceUUID = normalizeText_(request.deviceUUID);
-  const requestTimestamp = Number(request.requestTimestamp);
-  const requestId = normalizeText_(request.requestId);
-  const originProtocol = normalizeText_(request.originProtocol).toLowerCase();
-
-  if (!name) {
-    throw new Error("Missing employee name");
-  }
-  if (!deviceUUID) {
-    throw new Error("Missing device UUID");
-  }
-  if (!Number.isFinite(requestTimestamp)) {
-    throw new Error("Missing request timestamp");
-  }
-  if (!requestId) {
-    throw new Error("Missing request id");
-  }
-  if (!originProtocol) {
-    throw new Error("Missing protocol metadata");
-  }
-
-  request.name = name;
-  request.deviceUUID = deviceUUID;
-  request.requestTimestamp = Math.round(requestTimestamp);
-  request.requestId = requestId;
-  request.originProtocol = originProtocol;
-}
-
 function appendAttendanceLog_(runtimeConfig, log) {
   const sheet = getOrCreateSheet_(runtimeConfig, runtimeConfig.logSheetName, [
     "Timestamp",
@@ -826,45 +954,6 @@ function findBindingByDeviceUUID_(runtimeConfig, deviceUUID) {
     }
   }
   return { employeeName: "", deviceUUID: "" };
-}
-
-function findBindingByEmployeeName_(runtimeConfig, employeeName) {
-  const sheet = getSheetIfExists_(runtimeConfig, runtimeConfig.bindingSheetName);
-  if (!sheet) {
-    return { employeeName: "", deviceUUID: "" };
-  }
-  const lastRow = sheet.getLastRow();
-  if (lastRow < 2) {
-    return { employeeName: "", deviceUUID: "" };
-  }
-  const data = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
-  for (let i = 0; i < data.length; i += 1) {
-    const rowName = normalizeText_(data[i][0]);
-    const rowUUID = normalizeText_(data[i][1]);
-    if (rowName === employeeName) {
-      return { employeeName: rowName, deviceUUID: rowUUID };
-    }
-  }
-  return { employeeName: "", deviceUUID: "" };
-}
-
-function assertEmployeeExistsInRoster_(runtimeConfig, employeeName) {
-  const sheet = getSheetIfExists_(runtimeConfig, runtimeConfig.employeeSheetName);
-  if (!sheet) {
-    throw new Error("員工名單表不存在，請先建立 Employees 表");
-  }
-  const lastRow = sheet.getLastRow();
-  if (lastRow < 1) {
-    throw new Error("員工名單表沒有資料，請先建立員工名單");
-  }
-  const values = sheet.getRange(1, 1, lastRow, 1).getValues();
-  for (let i = 0; i < values.length; i += 1) {
-    const rowName = normalizeText_(values[i][0]);
-    if (rowName === employeeName) {
-      return;
-    }
-  }
-  throw new Error("姓名不在員工名單內，無法註冊");
 }
 
 function getRuntimeConfig_() {
@@ -1205,6 +1294,12 @@ function normalizeText_(value) {
   return String(value == null ? "" : value).trim();
 }
 
+function normalizeLeaveType_(value) {
+  const leaveType = normalizeText_(value);
+  const legacyTypes = { "病假": "sick", "事假": "personal", "特休": "annual", "其他": "other" };
+  return legacyTypes[leaveType] || leaveType;
+}
+
 function sha256Hex_(text) {
   const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, text, Utilities.Charset.UTF_8);
   let hex = "";
@@ -1248,6 +1343,6 @@ function setAdminCredential(username, password) {
       TAPIN_ADMIN_PASSWORD_SALT: salt,
       TAPIN_ADMIN_PASSWORD_HASH: hash
     },
-    true
+    false
   );
 }

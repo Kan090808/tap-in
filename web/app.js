@@ -49,11 +49,6 @@ const ui = {
   loginBtn: document.getElementById("login-btn"),
   usernameInput: document.getElementById("username-input"),
   passwordInput: document.getElementById("password-input"),
-  temporaryAdminResetForm: document.getElementById("temporary-admin-reset-form"),
-  temporaryAdminResetUsername: document.getElementById("temporary-admin-reset-username"),
-  temporaryAdminResetPassword: document.getElementById("temporary-admin-reset-password"),
-  temporaryAdminResetConfirm: document.getElementById("temporary-admin-reset-confirm"),
-  temporaryAdminResetBtn: document.getElementById("temporary-admin-reset-btn"),
   employeeShell: document.getElementById("employee-shell"),
   modePunchLink: document.getElementById("mode-punch-link"),
   modeLeaveLink: document.getElementById("mode-leave-link"),
@@ -268,11 +263,11 @@ function setBusy(isBusy) {
   }
   if (ui.punchBtn) {
     ui.punchBtn.disabled = isBusy;
-    ui.punchBtn.textContent = isBusy ? "處理中..." : "一鍵打卡";
+    ui.punchBtn.textContent = isBusy ? "Working..." : "Clock in";
   }
   if (ui.leaveBtn) {
     ui.leaveBtn.disabled = isBusy;
-    ui.leaveBtn.textContent = isBusy ? "處理中..." : "送出請假申請";
+    ui.leaveBtn.textContent = isBusy ? "Working..." : "Submit leave request";
   }
 }
 
@@ -281,12 +276,12 @@ function setAdminLoginBusy(isBusy) {
     return;
   }
   ui.loginBtn.disabled = isBusy;
-  ui.loginBtn.textContent = isBusy ? "登入中..." : "登入管理後台";
+  ui.loginBtn.textContent = isBusy ? "Signing in..." : "Sign in as admin";
 }
 
 function ensureBackendConfigured() {
   if (!CONFIG.GAS_WEB_APP_URL) {
-    throw new Error("請先在 web/config.js 設定 GAS_WEB_APP_URL");
+    throw new Error("Set GAS_WEB_APP_URL in web/config.js first");
   }
 }
 
@@ -304,10 +299,10 @@ async function postToBackend(payload) {
   try {
     data = JSON.parse(text);
   } catch (_error) {
-    throw new Error("後端回傳格式錯誤");
+    throw new Error("Invalid server response");
   }
   if (!response.ok || !data.ok) {
-    throw new Error(data.message || "請求失敗");
+    throw new Error(data.message || "Request failed");
   }
   return data;
 }
@@ -322,10 +317,10 @@ async function getFromBackend(action) {
   try {
     data = JSON.parse(text);
   } catch (_error) {
-    throw new Error("後端回傳格式錯誤");
+    throw new Error("Invalid server response");
   }
   if (!response.ok || !data.ok) {
-    throw new Error(data.message || "後端請求失敗");
+    throw new Error(data.message || "Server request failed");
   }
   return data;
 }
@@ -347,7 +342,7 @@ async function fetchNetworkTimestamp() {
   const data = await getFromBackend("serverTime");
   const timestamp = Number(data.serverTimestampMs);
   if (!Number.isFinite(timestamp)) {
-    throw new Error("無法取得網路時間");
+    throw new Error("Could not get server time");
   }
   return Math.round(timestamp);
 }
@@ -434,7 +429,7 @@ function updateTopbar() {
   const isAuthenticated = Boolean(state.sessionRole);
   if (ui.roleBadge) {
     ui.roleBadge.hidden = !isAuthenticated;
-    ui.roleBadge.textContent = state.sessionRole === "admin" ? "管理員" : "員工";
+    ui.roleBadge.textContent = state.sessionRole === "admin" ? "Admin" : "Employee";
   }
   if (ui.logoutBtn) {
     ui.logoutBtn.hidden = !isAuthenticated;
@@ -475,7 +470,7 @@ function showPortalLogin(role, options) {
   }
 
   setRoleTabActive(nextRole);
-  setPortalStatus(settings.status || (nextRole === "admin" ? "請先登入管理者帳號" : "請先以已綁定裝置登入"));
+  setPortalStatus(settings.status || (nextRole === "admin" ? "Sign in as an admin" : "Sign in with a registered device"));
   setPortalResult(settings.result || "", Boolean(settings.isError));
   updateTopbar();
 }
@@ -495,11 +490,11 @@ function renderEmployeeShell() {
   }
 
   if (mode === "punch") {
-    setEmployeeStatus("準備完成");
+    setEmployeeStatus("Ready");
   } else if (mode === "leave") {
-    setEmployeeStatus("請填寫請假資訊後送出");
+    setEmployeeStatus("Complete the leave form to submit a request");
   } else if (mode === "calendar") {
-    setEmployeeStatus("載入個人日曆中...");
+    setEmployeeStatus("Loading your calendar...");
     loadEmployeeCalendar();
   }
 }
@@ -570,7 +565,7 @@ function enterEmployeePortal(binding) {
   }
 
   if (ui.nameText) {
-    ui.nameText.textContent = binding.employeeName || "由系統自動識別";
+    ui.nameText.textContent = binding.employeeName || "Identified automatically";
   }
   if (ui.deviceText) {
     ui.deviceText.textContent = "Device UUID: " + (binding.deviceUUID || getOrCreateDeviceUUID());
@@ -606,17 +601,17 @@ async function enterAdminPortal() {
   initCalSelects(ui.adminCalYearSel, ui.adminCalMonthSel, adminCalYear, adminCalMonth);
 
   try {
-    setAdminStatus("讀取員工帳號中...");
+    setAdminStatus("Loading employee accounts...");
     await loadEmployees();
-    setAdminStatus("讀取設定中...");
+    setAdminStatus("Loading settings...");
     await loadConfig();
-    setAdminStatus("讀取打卡紀錄中...");
+    setAdminStatus("Loading attendance logs...");
     await loadLogs();
-    setAdminStatus("讀取請假申請中...");
+    setAdminStatus("Loading leave requests...");
     await loadLeaveRequests();
-    setAdminStatus("讀取日曆中...");
+    setAdminStatus("Loading calendar...");
     await loadAdminCalendar();
-    setAdminStatus("管理頁已就緒");
+    setAdminStatus("Admin dashboard ready");
     setAdminResult("", false);
     updateUrlForAdminView(state.adminView);
     return true;
@@ -626,8 +621,8 @@ async function enterAdminPortal() {
     state.sessionRole = "";
     updateVisibleTabs("");
     showPortalLogin("admin", {
-      status: "管理員登入已失效",
-      result: error.message || "未知錯誤",
+      status: "Admin session expired",
+      result: error.message || "Unknown error",
       isError: true
     });
     return false;
@@ -681,9 +676,9 @@ function initInstallEntry() {
   if (isIosSafari()) {
     ui.installBtn.hidden = false;
     ui.installBtn.disabled = false;
-    setInstallHint("iOS 請點分享，再選「加入主畫面」");
+    setInstallHint("On iOS, tap Share, then Add to Home Screen");
     ui.installBtn.addEventListener("click", function () {
-      setInstallHint("請在 Safari 點「分享」->「加入主畫面」");
+      setInstallHint("In Safari, tap Share, then Add to Home Screen");
     });
     return;
   }
@@ -693,24 +688,24 @@ function initInstallEntry() {
     state.deferredInstallPrompt = event;
     ui.installBtn.hidden = false;
     ui.installBtn.disabled = false;
-    setInstallHint("可將 TapIn 新增到桌面，像 App 一樣啟動");
+    setInstallHint("Add TapIn to your Home Screen for quick access");
   });
 
   window.addEventListener("appinstalled", function () {
     state.deferredInstallPrompt = null;
     hideInstallEntry();
     if (state.sessionRole === "admin") {
-      setAdminStatus("已新增至桌面");
+      setAdminStatus("Added to Home Screen");
       return;
     }
     if (state.sessionRole === "employee") {
-      setEmployeeStatus("已新增至桌面");
+      setEmployeeStatus("Added to Home Screen");
     }
   });
 
   ui.installBtn.addEventListener("click", async function () {
     if (!state.deferredInstallPrompt) {
-      setInstallHint("目前瀏覽器未提供安裝提示，請使用 Chrome 或 Edge。");
+      setInstallHint("This browser did not offer an install prompt. Try Chrome or Edge.");
       return;
     }
     const promptEvent = state.deferredInstallPrompt;
@@ -723,7 +718,7 @@ function initInstallEntry() {
     }
     ui.installBtn.hidden = false;
     ui.installBtn.disabled = false;
-    setInstallHint("你已取消新增至桌面，可再次點擊重試。");
+    setInstallHint("Installation canceled. You can try again.");
   });
 }
 
@@ -737,11 +732,11 @@ async function getPublicIP() {
       signal: controller.signal
     });
     if (!response.ok) {
-      throw new Error("IP 服務回應異常");
+      throw new Error("IP service returned an error");
     }
     const data = await response.json();
     if (!data || !data.ip) {
-      throw new Error("無法解析 IP");
+      throw new Error("Could not read your IP address");
     }
     return data.ip;
   } finally {
@@ -752,13 +747,13 @@ async function getPublicIP() {
 function getCurrentPosition() {
   return new Promise(function (resolve, reject) {
     if (!navigator.geolocation) {
-      reject(new Error("目前瀏覽器不支援定位"));
+      reject(new Error("This browser does not support location"));
       return;
     }
     navigator.geolocation.getCurrentPosition(
       resolve,
       function () {
-        reject(new Error("無法取得定位，請確認定位權限"));
+        reject(new Error("Could not get your location. Check location permissions."));
       },
       {
         enableHighAccuracy: true,
@@ -771,10 +766,10 @@ function getCurrentPosition() {
 
 function validateAccuracy(accuracy) {
   if (!Number.isFinite(accuracy)) {
-    throw new Error("定位精度不足，請到戶外後重試");
+    throw new Error("Location accuracy is too low. Try again outdoors.");
   }
   if (accuracy > state.maxGpsAccuracyMeters) {
-    throw new Error("定位精度過低（" + Math.round(accuracy) + "m），請重試");
+    throw new Error("Location accuracy is too low (" + Math.round(accuracy) + "m). Please try again.");
   }
 }
 
@@ -785,19 +780,19 @@ function toFixedNumber(value) {
 function formatNetworkTime(value) {
   const time = new Date(value);
   if (Number.isNaN(time.getTime())) {
-    return String(value || "未知");
+    return String(value || "Unknown");
   }
-  return time.toLocaleString("zh-TW", { hour12: false });
+  return time.toLocaleString("en-GB", { hour12: false });
 }
 
 function resolvePunchMessage(result) {
   const baseMessage = result.punchMessage
     ? result.punchMessage
     : result.employeeName
-      ? result.employeeName + " 打卡成功"
-      : "打卡成功";
+      ? result.employeeName + " Clock-in successful"
+      : "Clock-in successful";
   if (result.serverTime) {
-    return baseMessage + "（網路時間：" + formatNetworkTime(result.serverTime) + "）";
+    return baseMessage + " (server time: " + formatNetworkTime(result.serverTime) + ")";
   }
   return baseMessage;
 }
@@ -811,7 +806,7 @@ async function maybeNotifyArrival(locationStatus) {
   }
   if (Notification.permission === "granted") {
     new Notification("TapIn", {
-      body: "已完成到站打卡",
+      body: "Clock-in completed",
       tag: "tapin-arrival"
     });
   }
@@ -820,27 +815,27 @@ async function maybeNotifyArrival(locationStatus) {
 async function handleEmployeeLogin() {
   setBusy(true);
   setPortalResult("", false);
-  setPortalStatus("驗證裝置綁定中...");
+  setPortalStatus("Checking device registration...");
   try {
     const binding = await resolveEmployeeSession();
     if (!binding.isRegistered) {
       clearEmployeeSession();
       setStoredPortalRole("");
       showPortalLogin("employee", {
-        status: "此裝置尚未綁定員工身份",
-        result: "請複製上方 Device ID 傳給管理員，由管理員建立帳號。",
+        status: "This device is not registered",
+        result: "Copy the device ID above and send it to your admin to create your account.",
         isError: true
       });
       return;
     }
     enterEmployeePortal(binding);
     setEmployeeResult("", false);
-    setEmployeeStatus("登入成功");
+    setEmployeeStatus("Signed in");
     updateUrlForEmployeeMode(state.employeeMode);
   } catch (error) {
     showPortalLogin("employee", {
-      status: "員工登入失敗",
-      result: error.message || "未知錯誤",
+      status: "Employee sign-in failed",
+      result: error.message || "Unknown error",
       isError: true
     });
   } finally {
@@ -849,12 +844,12 @@ async function handleEmployeeLogin() {
 }
 
 async function submitPunch(payload) {
-  setEmployeeStatus("送出打卡中...");
+  setEmployeeStatus("Submitting clock-in...");
   const result = await postToBackend(payload);
   await maybeNotifyArrival(result.locationStatus);
-  setEmployeeStatus("打卡完成");
+  setEmployeeStatus("Clock-in complete");
   if (ui.nameText) {
-    ui.nameText.textContent = result.employeeName || "由系統自動識別";
+    ui.nameText.textContent = result.employeeName || "Identified automatically";
   }
   setEmployeeResult(resolvePunchMessage(result), false);
 }
@@ -866,10 +861,10 @@ async function handlePunch() {
 
   try {
     if (window.location.protocol !== "https:" && window.location.hostname !== "localhost") {
-      throw new Error("請使用 HTTPS 才能安全打卡");
+      throw new Error("Use HTTPS to clock in securely");
     }
 
-    setEmployeeStatus("取得 IP 與定位中...");
+    setEmployeeStatus("Getting IP address and location...");
     const values = await Promise.all([getPublicIP(), getCurrentPosition()]);
     const ip = values[0];
     const position = values[1];
@@ -895,8 +890,8 @@ async function handlePunch() {
       appVersion: "1.3.0"
     });
   } catch (error) {
-    setEmployeeStatus("打卡失敗");
-    setEmployeeResult(error.message || "發生未知錯誤", true);
+    setEmployeeStatus("Clock-in failed");
+    setEmployeeResult(error.message || "An unknown error occurred", true);
   } finally {
     setBusy(false);
   }
@@ -910,23 +905,23 @@ async function handleLeaveSubmit() {
   const reason = ui.leaveReasonTextarea ? ui.leaveReasonTextarea.value.trim() : "";
 
   if (!leaveType) {
-    setEmployeeResult("請選擇假別", true);
+    setEmployeeResult("Select a leave type", true);
     return;
   }
   if (!startDate) {
-    setEmployeeResult("請選擇開始日期", true);
+    setEmployeeResult("Select a start date", true);
     return;
   }
   if (!endDate) {
-    setEmployeeResult("請選擇結束日期", true);
+    setEmployeeResult("Select an end date", true);
     return;
   }
   if (endDate < startDate) {
-    setEmployeeResult("結束日期不能早於開始日期", true);
+    setEmployeeResult("End date cannot be before start date", true);
     return;
   }
   if (!reason) {
-    setEmployeeResult("請填寫請假原因", true);
+    setEmployeeResult("Enter a reason for leave", true);
     return;
   }
 
@@ -935,7 +930,7 @@ async function handleLeaveSubmit() {
 
   try {
     if (window.location.protocol !== "https:" && window.location.hostname !== "localhost") {
-      throw new Error("請使用 HTTPS 才能安全送出請假申請");
+      throw new Error("Use HTTPS to submit a leave request securely");
     }
     const requestTimestamp = await fetchNetworkTimestamp();
     const result = await postToBackend({
@@ -949,15 +944,15 @@ async function handleLeaveSubmit() {
       reason: reason
     });
 
-    setEmployeeStatus("送出完成");
-    setEmployeeResult((result.employeeName ? result.employeeName + " " : "") + "請假申請已送出，等待主管審核", false);
+    setEmployeeStatus("Submitted");
+    setEmployeeResult((result.employeeName ? result.employeeName + " " : "") + "Leave request submitted for review", false);
     if (ui.leaveTypeSelect) ui.leaveTypeSelect.value = "";
     if (ui.leaveStartInput) ui.leaveStartInput.value = "";
     if (ui.leaveEndInput) ui.leaveEndInput.value = "";
     if (ui.leaveReasonTextarea) ui.leaveReasonTextarea.value = "";
   } catch (error) {
-    setEmployeeStatus("送出失敗");
-    setEmployeeResult(error.message || "發生未知錯誤", true);
+    setEmployeeStatus("Submission failed");
+    setEmployeeResult(error.message || "An unknown error occurred", true);
   } finally {
     setBusy(false);
   }
@@ -976,7 +971,7 @@ function initCalSelects(yearEl, monthEl, year, month) {
   for (let y = curYear - 5; y <= curYear + 5; y += 1) {
     const opt = document.createElement("option");
     opt.value = y;
-    opt.textContent = y + " 年";
+    opt.textContent = String(y);
     if (y === year) {
       opt.selected = true;
     }
@@ -986,7 +981,7 @@ function initCalSelects(yearEl, monthEl, year, month) {
   for (let m = 1; m <= 12; m += 1) {
     const opt = document.createElement("option");
     opt.value = m;
-    opt.textContent = m + " 月";
+    opt.textContent = new Intl.DateTimeFormat("en", { month: "long" }).format(new Date(2000, m - 1, 1));
     if (m === month) {
       opt.selected = true;
     }
@@ -1005,7 +1000,7 @@ function buildCalendarHtml(year, month, dayContentFn) {
   const firstDow = new Date(year, month - 1, 1).getDay();
   const startOffset = (firstDow + 6) % 7;
   const daysInMonth = new Date(year, month, 0).getDate();
-  const headers = ["一", "二", "三", "四", "五", "六", "日"];
+  const headers = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
   let html = '<div class="cal-grid">';
   headers.forEach(function (header) {
@@ -1035,7 +1030,7 @@ async function loadEmployeeCalendar() {
     return;
   }
   try {
-    setEmployeeStatus("載入日曆中...");
+    setEmployeeStatus("Loading calendar...");
     const data = await postToBackend({
       action: "employeeGetCalendar",
       deviceUUID: getOrCreateDeviceUUID(),
@@ -1044,26 +1039,26 @@ async function loadEmployeeCalendar() {
     });
     const punchesByDate = data.punchesByDate || {};
     const leavesByDate = data.leavesByDate || {};
-    const locationLabel = { Office: "辦公室", office: "辦公室" };
+    const locationLabel = { Office: "Office", office: "Office" };
 
     ui.empCalWrap.innerHTML = buildCalendarHtml(empCalYear, empCalMonth, function (dateStr) {
       let content = "";
       const punches = punchesByDate[dateStr] || [];
       punches.forEach(function (punch) {
-        const label = locationLabel[punch.locationStatus] || "遠端";
+        const label = locationLabel[punch.locationStatus] || "Remote";
         content += '<span class="cal-punch-item">' + escapeHtml(punch.time) + " " + label + "</span>";
       });
       const leave = leavesByDate[dateStr];
       if (leave) {
-        content += '<span class="cal-leave-badge">' + escapeHtml(leave.leaveType) + "</span>";
+        content += '<span class="cal-leave-badge">' + escapeHtml(getLeaveTypeLabel(leave.leaveType)) + "</span>";
       }
       return content;
     });
-    setEmployeeStatus("日曆已更新");
+    setEmployeeStatus("Calendar updated");
     setEmployeeResult("", false);
   } catch (error) {
-    setEmployeeStatus("日曆載入失敗");
-    setEmployeeResult(error.message || "未知錯誤", true);
+    setEmployeeStatus("Could not load calendar");
+    setEmployeeResult(error.message || "Unknown error", true);
   }
 }
 
@@ -1088,7 +1083,7 @@ function resetEmployeeForm() {
   if (!ui.employeeForm) return;
   ui.employeeForm.reset();
   ui.employeeIdInput.value = "";
-  ui.saveEmployeeBtn.textContent = "新增員工";
+  ui.saveEmployeeBtn.textContent = "Add employee";
   ui.cancelEmployeeBtn.hidden = true;
 }
 
@@ -1099,7 +1094,7 @@ function renderEmployees() {
     const row = ui.employeesBody.insertRow();
     const cell = row.insertCell();
     cell.colSpan = 5;
-    cell.textContent = "目前沒有員工帳號";
+    cell.textContent = "No employee accounts yet";
     return;
   }
   employees.forEach(function (employee) {
@@ -1111,33 +1106,33 @@ function renderEmployees() {
     const edit = document.createElement("button");
     edit.type = "button";
     edit.className = "ghost-btn";
-    edit.textContent = "編輯";
+    edit.textContent = "Edit";
     edit.addEventListener("click", function () {
       ui.employeeIdInput.value = employee.employeeId;
       ui.employeeNameInput.value = employee.name || "";
       ui.employeePhoneInput.value = employee.phone || "";
       ui.employeeEmailInput.value = employee.email || "";
       ui.employeeDeviceInput.value = employee.deviceUUID || "";
-      ui.saveEmployeeBtn.textContent = "儲存變更";
+      ui.saveEmployeeBtn.textContent = "Save changes";
       ui.cancelEmployeeBtn.hidden = false;
       ui.employeeNameInput.focus();
     });
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "ghost-btn";
-    remove.textContent = "刪除";
+    remove.textContent = "Delete";
     remove.addEventListener("click", async function () {
-      if (!window.confirm("確定刪除「" + employee.name + "」的員工帳號？該裝置將無法登入。")) return;
+      if (!window.confirm('Delete the employee account for "' + employee.name + '"? This device will no longer be able to sign in.')) return;
       try {
-        setAdminStatus("刪除員工中...");
+        setAdminStatus("Deleting employee...");
         await postToBackend({ action: "adminDeleteEmployee", token: getAdminToken(), employeeId: employee.employeeId });
         if (ui.employeeIdInput.value === employee.employeeId) resetEmployeeForm();
         await loadEmployees();
-        setAdminStatus("員工已刪除");
-        setAdminResult("員工帳號已刪除", false);
+        setAdminStatus("Employee deleted");
+        setAdminResult("Employee account deleted", false);
       } catch (error) {
-        setAdminStatus("刪除失敗");
-        setAdminResult(error.message || "未知錯誤", true);
+        setAdminStatus("Could not delete employee");
+        setAdminResult(error.message || "Unknown error", true);
       }
     });
     actions.append(edit, remove);
@@ -1184,7 +1179,7 @@ function renderLogs(logs) {
     return;
   }
   if (!logs.length) {
-    ui.logsBody.innerHTML = '<tr><td colspan="7">目前沒有資料</td></tr>';
+    ui.logsBody.innerHTML = '<tr><td colspan="7">No records yet</td></tr>';
     return;
   }
   ui.logsBody.innerHTML = logs
@@ -1216,28 +1211,28 @@ function renderLeaveTable(leaves) {
     return;
   }
   if (!leaves.length) {
-    ui.leaveBody.innerHTML = '<tr><td colspan="9">目前沒有資料</td></tr>';
+    ui.leaveBody.innerHTML = '<tr><td colspan="9">No records yet</td></tr>';
     return;
   }
   const statusLabels = {
-    pending: "待審核",
-    approved: "已批准",
-    rejected: "已拒絕"
+    pending: "Pending",
+    approved: "Approved",
+    rejected: "Rejected"
   };
   ui.leaveBody.innerHTML = leaves
     .map(function (item) {
       const statusLabel = statusLabels[item.status] || escapeHtml(item.status);
       const actionCell =
         item.status === "pending"
-          ? '<button class="ghost-btn" onclick="handleLeaveAction(\'' + escapeHtml(item.requestId) + '\',\'approved\')">批准</button>' +
-            '<button class="ghost-btn" onclick="handleLeaveAction(\'' + escapeHtml(item.requestId) + '\',\'rejected\')">拒絕</button>'
+          ? '<button class="ghost-btn" onclick="handleLeaveAction(\'' + escapeHtml(item.requestId) + '\',\'approved\')">Approve</button>' +
+            '<button class="ghost-btn" onclick="handleLeaveAction(\'' + escapeHtml(item.requestId) + '\',\'rejected\')">Reject</button>'
           : statusLabel;
       const escapedId = escapeHtml(item.requestId);
       const shortId = escapedId.length > 8 ? escapedId.slice(0, 8) + "…" : escapedId;
       return '<tr>' +
         '<td title="' + escapedId + '">' + shortId + "</td>" +
         "<td>" + escapeHtml(item.employeeName) + "</td>" +
-        "<td>" + escapeHtml(item.leaveType) + "</td>" +
+        "<td>" + escapeHtml(getLeaveTypeLabel(item.leaveType)) + "</td>" +
         "<td>" + escapeHtml(item.startDate) + "</td>" +
         "<td>" + escapeHtml(item.endDate) + "</td>" +
         "<td>" + escapeHtml(item.reason) + "</td>" +
@@ -1247,6 +1242,16 @@ function renderLeaveTable(leaves) {
       "</tr>";
     })
     .join("");
+}
+
+function getLeaveTypeLabel(value) {
+  const labels = {
+    sick: "Sick leave",
+    personal: "Personal leave",
+    annual: "Annual leave",
+    other: "Other"
+  };
+  return labels[value] || value || "Unknown";
 }
 
 async function loadLeaveRequests() {
@@ -1261,19 +1266,19 @@ async function loadLeaveRequests() {
 
 async function handleLeaveAction(requestId, status) {
   try {
-    setAdminStatus(status === "approved" ? "批准中..." : "拒絕中...");
+    setAdminStatus(status === "approved" ? "Approving..." : "Rejecting...");
     await postToBackend({
       action: "adminUpdateLeaveStatus",
       token: getAdminToken(),
       requestId: requestId,
       status: status
     });
-    setAdminStatus(status === "approved" ? "已批准" : "已拒絕");
+    setAdminStatus(status === "approved" ? "Approved" : "Rejected");
     setAdminResult("", false);
     await loadLeaveRequests();
   } catch (error) {
-    setAdminStatus("操作失敗");
-    setAdminResult(error.message || "未知錯誤", true);
+    setAdminStatus("Action failed");
+    setAdminResult(error.message || "Unknown error", true);
   }
 }
 
@@ -1299,11 +1304,11 @@ async function loadAdminCalendar() {
         })
         .join("");
     });
-    setAdminStatus("日曆已更新");
+    setAdminStatus("Calendar updated");
     setAdminResult("", false);
   } catch (error) {
-    setAdminStatus("日曆載入失敗");
-    setAdminResult(error.message || "未知錯誤", true);
+    setAdminStatus("Could not load calendar");
+    setAdminResult(error.message || "Unknown error", true);
   }
 }
 
@@ -1315,15 +1320,6 @@ async function loginAdmin(username, password) {
   });
   setAdminToken(data.token || "");
   return data;
-}
-
-// TEMPORARY: Remove this public password reset flow after the administrator completes the reset.
-async function resetAdminPasswordTemporarily(username, password) {
-  return postToBackend({
-    action: "temporaryAdminPasswordReset",
-    username: username,
-    password: password
-  });
 }
 
 async function logoutCurrentSession() {
@@ -1352,11 +1348,11 @@ async function logoutCurrentSession() {
   }
   if (state.activeRoleTab === "admin") {
     updateUrlForLogin("admin");
-    showPortalLogin("admin", { status: "已登出" });
+    showPortalLogin("admin", { status: "Signed out" });
     return;
   }
   updateUrlForLogin("employee");
-  showPortalLogin("employee", { status: "已登出" });
+  showPortalLogin("employee", { status: "Signed out" });
 }
 
 function escapeHtml(text) {
@@ -1376,10 +1372,10 @@ async function initServiceWorker() {
     await navigator.serviceWorker.register("./sw.js");
   } catch (_error) {
     if (state.sessionRole === "admin") {
-      setAdminStatus("Service Worker 註冊失敗");
+      setAdminStatus("Service Worker registration failed");
       return;
     }
-    setPortalStatus("Service Worker 註冊失敗");
+    setPortalStatus("Service Worker registration failed");
   }
 }
 
@@ -1389,46 +1385,9 @@ function bindEvents() {
       const deviceId = getOrCreateDeviceUUID();
       try {
         await navigator.clipboard.writeText(deviceId);
-        ui.deviceIdCopyStatus.textContent = "Device ID 已複製，可傳給管理員。";
+        ui.deviceIdCopyStatus.textContent = "Device ID copied. Send it to your admin.";
       } catch (_error) {
-        ui.deviceIdCopyStatus.textContent = "無法自動複製，請長按上方 Device ID 手動複製。";
-      }
-    });
-  }
-
-  if (ui.temporaryAdminResetForm) {
-    ui.temporaryAdminResetForm.addEventListener("submit", async function (event) {
-      event.preventDefault();
-      const username = ui.temporaryAdminResetUsername.value.trim();
-      const password = ui.temporaryAdminResetPassword.value;
-      const confirmation = ui.temporaryAdminResetConfirm.value;
-      if (!username) {
-        setPortalResult("請輸入新的管理員帳號。", true);
-        return;
-      }
-      if (password.length < 12) {
-        setPortalResult("新密碼至少需要 12 個字元。", true);
-        return;
-      }
-      if (password !== confirmation) {
-        setPortalResult("兩次輸入的密碼不一致。", true);
-        return;
-      }
-
-      ui.temporaryAdminResetBtn.disabled = true;
-      setPortalStatus("正在重設管理員密碼...");
-      setPortalResult("", false);
-      try {
-        await resetAdminPasswordTemporarily(username, password);
-        ui.temporaryAdminResetForm.reset();
-        if (ui.usernameInput) ui.usernameInput.value = username;
-        setPortalStatus("管理員密碼已重設");
-        setPortalResult("請使用新帳號和新密碼登入。", false);
-      } catch (error) {
-        setPortalStatus("重設失敗");
-        setPortalResult(error.message || "未知錯誤", true);
-      } finally {
-        ui.temporaryAdminResetBtn.disabled = false;
+        ui.deviceIdCopyStatus.textContent = "Could not copy automatically. Press and hold the device ID above to copy it.";
       }
     });
   }
@@ -1437,7 +1396,7 @@ function bindEvents() {
     ui.employeeRoleTab.addEventListener("click", function () {
       updateUrlForLogin("employee");
       showPortalLogin("employee", {
-        status: "請先以已綁定裝置登入"
+        status: "Sign in with a registered device"
       });
     });
   }
@@ -1446,7 +1405,7 @@ function bindEvents() {
     ui.adminRoleTab.addEventListener("click", function () {
       updateUrlForLogin("admin");
       showPortalLogin("admin", {
-        status: "請先登入管理者帳號"
+        status: "Sign in as an admin"
       });
     });
   }
@@ -1459,26 +1418,26 @@ function bindEvents() {
     ui.employeeForm.addEventListener("submit", async function (event) {
       event.preventDefault();
       try {
-        setAdminStatus("儲存員工中...");
+        setAdminStatus("Saving employee...");
         await saveEmployee();
-        setAdminStatus("員工帳號已更新");
-        setAdminResult("員工帳號已儲存", false);
+        setAdminStatus("Employee accounts updated");
+        setAdminResult("Employee account saved", false);
       } catch (error) {
-        setAdminStatus("儲存失敗");
-        setAdminResult(error.message || "未知錯誤", true);
+        setAdminStatus("Could not save");
+        setAdminResult(error.message || "Unknown error", true);
       }
     });
   }
   if (ui.cancelEmployeeBtn) ui.cancelEmployeeBtn.addEventListener("click", resetEmployeeForm);
   if (ui.reloadEmployeesBtn) ui.reloadEmployeesBtn.addEventListener("click", async function () {
     try {
-      setAdminStatus("讀取員工帳號中...");
+      setAdminStatus("Loading employee accounts...");
       await loadEmployees();
-      setAdminStatus("員工帳號已更新");
+      setAdminStatus("Employee accounts updated");
       setAdminResult("", false);
     } catch (error) {
-      setAdminStatus("讀取失敗");
-      setAdminResult(error.message || "未知錯誤", true);
+      setAdminStatus("Could not load");
+      setAdminResult(error.message || "Unknown error", true);
     }
   });
 
@@ -1486,7 +1445,7 @@ function bindEvents() {
     ui.loginForm.addEventListener("submit", async function (event) {
       event.preventDefault();
       setAdminLoginBusy(true);
-      setPortalStatus("登入管理後台中...");
+      setPortalStatus("Signing in as admin...");
       setPortalResult("", false);
       try {
         const data = await loginAdmin(
@@ -1498,11 +1457,11 @@ function bindEvents() {
         }
         state.adminView = getAdminView();
         await enterAdminPortal();
-        setAdminResult("Session 到期：" + (data.expiresAt || "未知"), false);
+        setAdminResult("Session expires: " + (data.expiresAt || "Unknown"), false);
       } catch (error) {
         showPortalLogin("admin", {
-          status: "登入失敗",
-          result: error.message || "未知錯誤",
+          status: "Sign-in failed",
+          result: error.message || "Unknown error",
           isError: true
         });
       } finally {
@@ -1569,13 +1528,13 @@ function bindEvents() {
     ui.configForm.addEventListener("submit", async function (event) {
       event.preventDefault();
       try {
-        setAdminStatus("儲存設定中...");
+        setAdminStatus("Saving settings...");
         await saveConfig();
-        setAdminStatus("設定已更新");
-        setAdminResult("設定更新成功", false);
+        setAdminStatus("Settings updated");
+        setAdminResult("Settings saved", false);
       } catch (error) {
-        setAdminStatus("儲存失敗");
-        setAdminResult(error.message || "未知錯誤", true);
+        setAdminStatus("Could not save");
+        setAdminResult(error.message || "Unknown error", true);
       }
     });
   }
@@ -1583,13 +1542,13 @@ function bindEvents() {
   if (ui.reloadLogsBtn) {
     ui.reloadLogsBtn.addEventListener("click", async function () {
       try {
-        setAdminStatus("載入打卡紀錄中...");
+        setAdminStatus("Loading attendance logs...");
         await loadLogs();
-        setAdminStatus("打卡紀錄已更新");
+        setAdminStatus("Attendance logs updated");
         setAdminResult("", false);
       } catch (error) {
-        setAdminStatus("載入失敗");
-        setAdminResult(error.message || "未知錯誤", true);
+        setAdminStatus("Could not load");
+        setAdminResult(error.message || "Unknown error", true);
       }
     });
   }
@@ -1597,13 +1556,13 @@ function bindEvents() {
   if (ui.limitSelect) {
     ui.limitSelect.addEventListener("change", async function () {
       try {
-        setAdminStatus("載入打卡紀錄中...");
+        setAdminStatus("Loading attendance logs...");
         await loadLogs();
-        setAdminStatus("打卡紀錄已更新");
+        setAdminStatus("Attendance logs updated");
         setAdminResult("", false);
       } catch (error) {
-        setAdminStatus("載入失敗");
-        setAdminResult(error.message || "未知錯誤", true);
+        setAdminStatus("Could not load");
+        setAdminResult(error.message || "Unknown error", true);
       }
     });
   }
@@ -1611,13 +1570,13 @@ function bindEvents() {
   if (ui.reloadLeaveBtn) {
     ui.reloadLeaveBtn.addEventListener("click", async function () {
       try {
-        setAdminStatus("載入請假申請中...");
+        setAdminStatus("Loading leave requests...");
         await loadLeaveRequests();
-        setAdminStatus("請假申請已更新");
+        setAdminStatus("Leave requests updated");
         setAdminResult("", false);
       } catch (error) {
-        setAdminStatus("載入失敗");
-        setAdminResult(error.message || "未知錯誤", true);
+        setAdminStatus("Could not load");
+        setAdminResult(error.message || "Unknown error", true);
       }
     });
   }
@@ -1625,13 +1584,13 @@ function bindEvents() {
   if (ui.leaveStatusSelect) {
     ui.leaveStatusSelect.addEventListener("change", async function () {
       try {
-        setAdminStatus("載入請假申請中...");
+        setAdminStatus("Loading leave requests...");
         await loadLeaveRequests();
-        setAdminStatus("請假申請已更新");
+        setAdminStatus("Leave requests updated");
         setAdminResult("", false);
       } catch (error) {
-        setAdminStatus("載入失敗");
-        setAdminResult(error.message || "未知錯誤", true);
+        setAdminStatus("Could not load");
+        setAdminResult(error.message || "Unknown error", true);
       }
     });
   }
@@ -1690,7 +1649,7 @@ async function restoreSessionFromStorage() {
       }
     }
     showPortalLogin("admin", {
-      status: "請先登入管理者帳號"
+      status: "Sign in as an admin"
     });
     return false;
   }
@@ -1711,7 +1670,7 @@ async function restoreSessionFromStorage() {
   }
 
   showPortalLogin("employee", {
-    status: "請先以已綁定裝置登入",
+    status: "Sign in with a registered device",
   });
   return false;
 }
@@ -1719,7 +1678,7 @@ async function restoreSessionFromStorage() {
 async function bootstrap() {
   if (ui.deviceIdValue) ui.deviceIdValue.textContent = getOrCreateDeviceUUID();
   if (!CONFIG.GAS_WEB_APP_URL) {
-    setPortalResult("請先設定 web/config.js 的 GAS_WEB_APP_URL", true);
+    setPortalResult("Set GAS_WEB_APP_URL in web/config.js first", true);
   }
 
   bindEvents();
@@ -1731,8 +1690,8 @@ async function bootstrap() {
     try {
       await fetchPublicConfig();
     } catch (error) {
-      setPortalStatus("公開設定載入失敗");
-      setPortalResult(error.message || "未知錯誤", true);
+      setPortalStatus("Could not load public settings");
+      setPortalResult(error.message || "Unknown error", true);
     }
   }
 

@@ -1,4 +1,4 @@
-const CACHE_NAME = "tapin-v7";
+const CACHE_NAME = "tapin-v8";
 const ASSETS = [
   "./",
   "./index.html",

@@ -63,7 +63,7 @@ function setResult(text, isError = false) {
 
 function ensureBackendConfigured() {
   if (!CONFIG.GAS_WEB_APP_URL) {
-    throw new Error("請先在 web/config.js 設定 GAS_WEB_APP_URL");
+    throw new Error("Set GAS_WEB_APP_URL in web/config.js first");
   }
 }
 
@@ -81,10 +81,10 @@ async function postApi(payload) {
   try {
     data = JSON.parse(text);
   } catch (_error) {
-    throw new Error("後端回傳格式錯誤");
+    throw new Error("Invalid response from server");
   }
   if (!response.ok || !data.ok) {
-    throw new Error(data.message || "請求失敗");
+    throw new Error(data.message || "Request failed");
   }
   return data;
 }
@@ -107,7 +107,7 @@ function fillConfig(config) {
 
 function renderLogs(logs) {
   if (!logs.length) {
-    ui.logsBody.innerHTML = '<tr><td colspan="7">目前沒有資料</td></tr>';
+    ui.logsBody.innerHTML = '<tr><td colspan="7">No records found</td></tr>';
     return;
   }
   ui.logsBody.innerHTML = logs
@@ -135,15 +135,15 @@ function escapeHtml(text) {
 }
 
 async function login(username, password) {
-  setStatus("登入中...");
+  setStatus("Signing in...");
   const data = await postApi({
     action: "adminLogin",
     username: username,
     password: password
   });
   setToken(data.token);
-  setStatus("登入成功");
-  setResult(`Session 到期：${data.expiresAt}`);
+  setStatus("Signed in");
+  setResult(`Session expires: ${data.expiresAt}`);
 }
 
 async function logout() {
@@ -154,7 +154,7 @@ async function logout() {
   setToken("");
   showDashboard(false);
   ui.loginForm.reset();
-  setStatus("已登出");
+  setStatus("Signed out");
   setResult("");
 }
 
@@ -197,17 +197,17 @@ async function loadLeaveRequests() {
 function renderLeaveTable(leaves) {
   if (!ui.leaveBody) return;
   if (!leaves.length) {
-    ui.leaveBody.innerHTML = '<tr><td colspan="9">目前沒有資料</td></tr>';
+    ui.leaveBody.innerHTML = '<tr><td colspan="9">No records found</td></tr>';
     return;
   }
-  const statusLabels = { pending: "待審核", approved: "已批准", rejected: "已拒絕" };
+  const statusLabels = { pending: "Pending", approved: "Approved", rejected: "Rejected" };
   ui.leaveBody.innerHTML = leaves
     .map((item) => {
       const statusLabel = statusLabels[item.status] || escapeHtml(item.status);
       const actionCell =
         item.status === "pending"
-          ? `<button class="ghost-btn" onclick="handleLeaveAction('${escapeHtml(item.requestId)}','approved')">批准</button>
-             <button class="ghost-btn" onclick="handleLeaveAction('${escapeHtml(item.requestId)}','rejected')">拒絕</button>`
+          ? `<button class="ghost-btn" onclick="handleLeaveAction('${escapeHtml(item.requestId)}','approved')">Approve</button>
+             <button class="ghost-btn" onclick="handleLeaveAction('${escapeHtml(item.requestId)}','rejected')">Reject</button>`
           : statusLabel;
       const shortId = escapeHtml(item.requestId).slice(0, 8) + "…";
       return `<tr>
@@ -235,7 +235,7 @@ function initCalSelects(yearEl, monthEl, year, month) {
   for (let y = curYear - 5; y <= curYear + 5; y += 1) {
     const opt = document.createElement("option");
     opt.value = y;
-    opt.textContent = y + " 年";
+    opt.textContent = String(y);
     if (y === year) opt.selected = true;
     yearEl.appendChild(opt);
   }
@@ -243,7 +243,7 @@ function initCalSelects(yearEl, monthEl, year, month) {
   for (let m = 1; m <= 12; m += 1) {
     const opt = document.createElement("option");
     opt.value = m;
-    opt.textContent = m + " 月";
+    opt.textContent = new Intl.DateTimeFormat("en", { month: "long" }).format(new Date(2000, m - 1, 1));
     if (m === month) opt.selected = true;
     monthEl.appendChild(opt);
   }
@@ -262,7 +262,7 @@ function buildCalendarHtml(year, month, dayContentFn) {
   const startOffset = (firstDow + 6) % 7; // Mon=0 … Sun=6
   const daysInMonth = new Date(year, month, 0).getDate();
 
-  const HEADERS = ["一", "二", "三", "四", "五", "六", "日"];
+  const HEADERS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
   let html = '<div class="cal-grid">';
   HEADERS.forEach(function (h) {
     html += '<div class="cal-header-cell">' + h + "</div>";
@@ -290,7 +290,7 @@ function buildCalendarHtml(year, month, dayContentFn) {
 async function loadAdminCalendar() {
   if (!ui.adminCalWrap) return;
   try {
-    setStatus("載入日曆中...");
+    setStatus("Loading calendar...");
     const token = getToken();
     const data = await postApi({
       action: "adminGetCalendar",
@@ -311,25 +311,25 @@ async function loadAdminCalendar() {
           .join("");
       }
     );
-    setStatus("日曆已更新");
+    setStatus("Calendar updated");
     setResult("");
   } catch (error) {
-    setStatus("日曆載入失敗");
-    setResult(error.message || "未知錯誤", true);
+    setStatus("Could not load calendar");
+    setResult(error.message || "Unknown error", true);
   }
 }
 
 async function handleLeaveAction(requestId, status) {
   try {
-    setStatus(status === "approved" ? "批准中..." : "拒絕中...");
+    setStatus(status === "approved" ? "Approving..." : "Rejecting...");
     const token = getToken();
     await postApi({ action: "adminUpdateLeaveStatus", token: token, requestId: requestId, status: status });
-    setStatus(status === "approved" ? "已批准" : "已拒絕");
+    setStatus(status === "approved" ? "Approved" : "Rejected");
     setResult("");
     await loadLeaveRequests();
   } catch (error) {
-    setStatus("操作失敗");
-    setResult(error.message || "未知錯誤", true);
+    setStatus("Action failed");
+    setResult(error.message || "Unknown error", true);
   }
 }
 
@@ -337,21 +337,21 @@ async function enterDashboard() {
   try {
     showDashboard(true);
     initCalSelects(ui.adminCalYearSel, ui.adminCalMonthSel, adminCalYear, adminCalMonth);
-    setStatus("讀取設定中...");
+    setStatus("Loading settings...");
     await loadConfig();
-    setStatus("讀取打卡紀錄中...");
+    setStatus("Loading attendance records...");
     await loadLogs();
-    setStatus("讀取請假申請中...");
+    setStatus("Loading leave requests...");
     await loadLeaveRequests();
-    setStatus("讀取日曆中...");
+    setStatus("Loading calendar...");
     await loadAdminCalendar();
-    setStatus("管理頁已就緒");
+    setStatus("Admin dashboard ready");
     setResult("");
   } catch (error) {
     setToken("");
     showDashboard(false);
-    setStatus("登入失敗");
-    setResult(error.message || "未知錯誤", true);
+    setStatus("Sign-in failed");
+    setResult(error.message || "Unknown error", true);
   }
 }
 
@@ -363,8 +363,8 @@ function bindEvents() {
       ui.passwordInput.value = "";
       await enterDashboard();
     } catch (error) {
-      setStatus("登入失敗");
-      setResult(error.message || "未知錯誤", true);
+      setStatus("Sign-in failed");
+      setResult(error.message || "Unknown error", true);
     }
   });
 
@@ -372,58 +372,58 @@ function bindEvents() {
     try {
       await logout();
     } catch (error) {
-      setStatus("登出失敗");
-      setResult(error.message || "未知錯誤", true);
+      setStatus("Sign-out failed");
+      setResult(error.message || "Unknown error", true);
     }
   });
 
   ui.configForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     try {
-      setStatus("儲存設定中...");
+      setStatus("Saving settings...");
       await saveConfig();
-      setStatus("設定已更新");
-      setResult("設定更新成功");
+      setStatus("Settings updated");
+      setResult("Settings saved");
     } catch (error) {
-      setStatus("儲存失敗");
-      setResult(error.message || "未知錯誤", true);
+      setStatus("Could not save settings");
+      setResult(error.message || "Unknown error", true);
     }
   });
 
   ui.reloadLogsBtn.addEventListener("click", async () => {
     try {
-      setStatus("載入打卡紀錄中...");
+      setStatus("Loading attendance records...");
       await loadLogs();
-      setStatus("打卡紀錄已更新");
+      setStatus("Attendance records updated");
       setResult("");
     } catch (error) {
-      setStatus("載入失敗");
-      setResult(error.message || "未知錯誤", true);
+      setStatus("Could not load data");
+      setResult(error.message || "Unknown error", true);
     }
   });
 
   ui.limitSelect.addEventListener("change", async () => {
     try {
-      setStatus("載入打卡紀錄中...");
+      setStatus("Loading attendance records...");
       await loadLogs();
-      setStatus("打卡紀錄已更新");
+      setStatus("Attendance records updated");
       setResult("");
     } catch (error) {
-      setStatus("載入失敗");
-      setResult(error.message || "未知錯誤", true);
+      setStatus("Could not load data");
+      setResult(error.message || "Unknown error", true);
     }
   });
 
   if (ui.reloadLeaveBtn) {
     ui.reloadLeaveBtn.addEventListener("click", async () => {
       try {
-        setStatus("載入請假申請中...");
+        setStatus("Loading leave requests...");
         await loadLeaveRequests();
-        setStatus("請假申請已更新");
+        setStatus("Leave requests updated");
         setResult("");
       } catch (error) {
-        setStatus("載入失敗");
-        setResult(error.message || "未知錯誤", true);
+        setStatus("Could not load data");
+        setResult(error.message || "Unknown error", true);
       }
     });
   }
@@ -431,13 +431,13 @@ function bindEvents() {
   if (ui.leaveStatusSelect) {
     ui.leaveStatusSelect.addEventListener("change", async () => {
       try {
-        setStatus("載入請假申請中...");
+        setStatus("Loading leave requests...");
         await loadLeaveRequests();
-        setStatus("請假申請已更新");
+        setStatus("Leave requests updated");
         setResult("");
       } catch (error) {
-        setStatus("載入失敗");
-        setResult(error.message || "未知錯誤", true);
+        setStatus("Could not load data");
+        setResult(error.message || "Unknown error", true);
       }
     });
   }
@@ -485,7 +485,7 @@ async function bootstrap() {
     return;
   }
   showDashboard(false);
-  setStatus("請先登入管理者帳號");
+  setStatus("Sign in as an administrator");
 }
 
 bootstrap();
