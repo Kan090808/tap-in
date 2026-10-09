@@ -1,4 +1,4 @@
-const CACHE_NAME = "tapin-v8";
+const CACHE_NAME = "tapin-v9";
 const ASSETS = [
   "./",
   "./index.html",
@@ -44,6 +44,28 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin || isExcludedPath(url.pathname)) {
     event.respondWith(fetch(event.request));
+    return;
+  }
+
+  // Refresh the application shell from the network; retain an offline fallback.
+  if (event.request.mode === "navigate" || url.pathname.endsWith("/app.js")) {
+    event.respondWith(
+      fetch(event.request, { cache: "no-store" }).then((response) => {
+        if (response && response.status === 200 && response.type === "basic") {
+          const copy = response.clone();
+          event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy)));
+        }
+        return response;
+      }).catch(async () => {
+        const cached = await caches.match(event.request);
+        if (cached) return cached;
+        if (event.request.mode === "navigate") {
+          const shell = await caches.match("./index.html");
+          if (shell) return shell;
+        }
+        return Response.error();
+      })
+    );
     return;
   }
 

@@ -600,33 +600,41 @@ async function enterAdminPortal() {
   renderAdminShell();
   initCalSelects(ui.adminCalYearSel, ui.adminCalMonthSel, adminCalYear, adminCalMonth);
 
-  try {
-    setAdminStatus("Loading employee accounts...");
-    await loadEmployees();
-    setAdminStatus("Loading settings...");
-    await loadConfig();
-    setAdminStatus("Loading attendance logs...");
-    await loadLogs();
-    setAdminStatus("Loading leave requests...");
-    await loadLeaveRequests();
-    setAdminStatus("Loading calendar...");
-    await loadAdminCalendar();
-    setAdminStatus("Admin dashboard ready");
-    setAdminResult("", false);
-    updateUrlForAdminView(state.adminView);
-    return true;
-  } catch (error) {
-    setAdminToken("");
-    setStoredPortalRole("");
-    state.sessionRole = "";
-    updateVisibleTabs("");
-    showPortalLogin("admin", {
-      status: "Admin session expired",
-      result: error.message || "Unknown error",
-      isError: true
-    });
-    return false;
+  const panels = [
+    ["Employee accounts", loadEmployees],
+    ["Settings", loadConfig],
+    ["Attendance logs", loadLogs],
+    ["Leave requests", loadLeaveRequests],
+    ["Calendar", loadAdminCalendar]
+  ];
+  const failures = [];
+  for (const [label, load] of panels) {
+    setAdminStatus("Loading " + label.toLowerCase() + "...");
+    try {
+      await load();
+    } catch (error) {
+      const message = error.message || "Unknown error";
+      // Only these errors come from GAS requireAdminSession_. A failed panel
+      // request (for example an unsupported action) does not invalidate login.
+      if (message === "Admin session expired" || message === "Admin token is required") {
+        setAdminToken("");
+        setStoredPortalRole("");
+        state.sessionRole = "";
+        updateVisibleTabs("");
+        showPortalLogin("admin", {
+          status: "Admin session expired",
+          result: message,
+          isError: true
+        });
+        return false;
+      }
+      failures.push(label + ": " + message);
+    }
   }
+  setAdminStatus(failures.length ? "Some dashboard data could not be loaded" : "Admin dashboard ready");
+  setAdminResult(failures.join("; "), failures.length > 0);
+  updateUrlForAdminView(state.adminView);
+  return true;
 }
 
 function isStandaloneMode() {
@@ -1379,7 +1387,29 @@ async function initServiceWorker() {
   }
 }
 
+function bindAdminViewNavigation() {
+  const links = [
+    [ui.adminViewConfigLink, "config"],
+    [ui.adminViewEmployeesLink, "employees"],
+    [ui.adminViewLogsLink, "logs"],
+    [ui.adminViewLeavesLink, "leaves"],
+    [ui.adminViewCalendarLink, "calendar"]
+  ];
+  for (const [link, view] of links) {
+    if (!link) continue;
+    link.addEventListener("click", function (event) {
+      if (state.sessionRole !== "admin" || event.button !== 0 ||
+          event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      event.preventDefault();
+      state.adminView = view;
+      renderAdminShell();
+      updateUrlForAdminView(view);
+    });
+  }
+}
+
 function bindEvents() {
+  bindAdminViewNavigation();
   if (ui.copyDeviceIdBtn) {
     ui.copyDeviceIdBtn.addEventListener("click", async function () {
       const deviceId = getOrCreateDeviceUUID();
@@ -1644,9 +1674,8 @@ async function restoreSessionFromStorage() {
     state.adminView = getAdminView();
     if (getAdminToken()) {
       const entered = await enterAdminPortal();
-      if (entered) {
-        return true;
-      }
+      // enterAdminPortal already displays the reason if the session is invalid.
+      return entered;
     }
     showPortalLogin("admin", {
       status: "Sign in as an admin"
@@ -1695,7 +1724,18 @@ async function bootstrap() {
     }
   }
 
-  await restoreSessionFromStorage();
+  try {
+    await restoreSessionFromStorage();
+  } catch (error) {
+    showPortalLogin(getRequestedRole(), {
+      status: "Could not restore your session",
+      result: error.message || "Please try again",
+      isError: true
+    });
+  } finally {
+    const loading = document.getElementById("portal-loading");
+    if (loading) loading.hidden = true;
+  }
 }
 
 bootstrap();
