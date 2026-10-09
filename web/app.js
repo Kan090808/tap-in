@@ -600,41 +600,48 @@ async function enterAdminPortal() {
   renderAdminShell();
   initCalSelects(ui.adminCalYearSel, ui.adminCalMonthSel, adminCalYear, adminCalMonth);
 
-  const panels = [
-    ["Employee accounts", loadEmployees],
-    ["Settings", loadConfig],
-    ["Attendance logs", loadLogs],
-    ["Leave requests", loadLeaveRequests],
-    ["Calendar", loadAdminCalendar]
-  ];
-  const failures = [];
-  for (const [label, load] of panels) {
-    setAdminStatus("Loading " + label.toLowerCase() + "...");
-    try {
-      await load();
-    } catch (error) {
-      const message = error.message || "Unknown error";
-      // Only these errors come from GAS requireAdminSession_. A failed panel
-      // request (for example an unsupported action) does not invalidate login.
-      if (message === "Admin session expired" || message === "Admin token is required") {
-        setAdminToken("");
-        setStoredPortalRole("");
-        state.sessionRole = "";
-        updateVisibleTabs("");
-        showPortalLogin("admin", {
-          status: "Admin session expired",
-          result: message,
-          isError: true
-        });
-        return false;
-      }
-      failures.push(label + ": " + message);
-    }
-  }
-  setAdminStatus(failures.length ? "Some dashboard data could not be loaded" : "Admin dashboard ready");
-  setAdminResult(failures.join("; "), failures.length > 0);
+  const loading = document.getElementById("portal-loading");
+  if (loading) loading.hidden = true;
   updateUrlForAdminView(state.adminView);
-  return true;
+  return loadAdminView(state.adminView);
+}
+
+async function loadAdminView(view) {
+  const loaders = {
+    employees: loadEmployees,
+    config: loadConfig,
+    logs: loadLogs,
+    leaves: loadLeaveRequests,
+    calendar: function () { return loadAdminCalendar(true); }
+  };
+  const token = getAdminToken();
+  setAdminStatus("Loading " + view + "...");
+  setAdminResult("", false);
+  try {
+    await loaders[view]();
+    if (state.sessionRole === "admin" && state.adminView === view && getAdminToken() === token) {
+      setAdminStatus("Admin dashboard ready");
+      setAdminResult("", false);
+    }
+    return true;
+  } catch (error) {
+    // Ignore responses from a session that has since been replaced or signed out.
+    if (state.sessionRole !== "admin" || getAdminToken() !== token) return false;
+    const message = error.message || "Unknown error";
+    if (message === "Admin session expired" || message === "Admin token is required") {
+      setAdminToken("");
+      setStoredPortalRole("");
+      showPortalLogin("admin", {
+        status: "Admin session expired", result: message, isError: true
+      });
+      return false;
+    }
+    if (state.adminView === view) {
+      setAdminStatus("Could not load " + view);
+      setAdminResult(message, true);
+    }
+    return true;
+  }
 }
 
 function isStandaloneMode() {
@@ -1292,7 +1299,7 @@ async function handleLeaveAction(requestId, status) {
 
 window.handleLeaveAction = handleLeaveAction;
 
-async function loadAdminCalendar() {
+async function loadAdminCalendar(propagateError) {
   if (!ui.adminCalWrap || state.sessionRole !== "admin") {
     return;
   }
@@ -1315,6 +1322,7 @@ async function loadAdminCalendar() {
     setAdminStatus("Calendar updated");
     setAdminResult("", false);
   } catch (error) {
+    if (propagateError) throw error;
     setAdminStatus("Could not load calendar");
     setAdminResult(error.message || "Unknown error", true);
   }
@@ -1404,6 +1412,7 @@ function bindAdminViewNavigation() {
       state.adminView = view;
       renderAdminShell();
       updateUrlForAdminView(view);
+      void loadAdminView(view);
     });
   }
 }
@@ -1713,15 +1722,13 @@ async function bootstrap() {
   bindEvents();
   initInstallEntry();
   initEmpCalSelects(empCalYear, empCalMonth);
-  await initServiceWorker();
+  void initServiceWorker();
 
   if (CONFIG.GAS_WEB_APP_URL) {
-    try {
-      await fetchPublicConfig();
-    } catch (error) {
-      setPortalStatus("Could not load public settings");
-      setPortalResult(error.message || "Unknown error", true);
-    }
+    // Public settings are independent of restoring the administrator session.
+    void fetchPublicConfig().catch(function () {
+      // Retain configured defaults; do not overwrite session or dashboard feedback.
+    });
   }
 
   try {
