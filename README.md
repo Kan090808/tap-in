@@ -4,11 +4,11 @@ TapIn 是一個以「一鍵打卡、零摩擦」為目標的 PWA。前端部署�
 
 ## 功能摘要
 - 一鍵打卡（以 Device UUID 自動識別）
-- QR 註冊（`?mode=register` 綁定姓名與裝置）
+- 員工複製頁面上方 Device ID，由管理員建立與綁定帳號
 - 裝置綁定（Device UUID）
 - IP 邊界判定（Office / Remote/Field）
 - GPS 座標與精度檢查
-- 管理後台登入、修改系統設定、查看打卡紀錄
+- 管理後台登入、管理員工帳號、修改系統設定、查看打卡紀錄
 
 ## 專案結構
 - `docs/`：規格與進度文件
@@ -22,7 +22,7 @@ TapIn 是一個以「一鍵打卡、零摩擦」為目標的 PWA。前端部署�
 4. 在 GAS 編輯器執行一次 `setAdminCredential("admin", "你的密碼")` 建立管理者帳號。
 5. 部署 GAS 為 Web App（執行身分：你自己；存取權：任何人）。
 6. 部署 `web/` 到 GitHub Pages 或 Vercel（HTTPS）。
-7. 在同一份 Spreadsheet 建立 `Employees` 工作表，第一欄填入可註冊的員工姓名。
+7. 在管理後台「員工帳號」新增員工姓名、電話、Email 與員工提供的 Device ID。系統會建立 `Employees` 與 `DeviceBindings` 工作表；既有員工名單也會保留。
 
 ## GitHub Pages 部署（公開）
 1. 建立新的公開 GitHub repo（建議名稱：`tap-in`）。
@@ -47,6 +47,7 @@ TapIn 是一個以「一鍵打卡、零摩擦」為目標的 PWA。前端部署�
 ## 管理後台
 - 路徑：`/admin.html`
 - 可管理項目：
+  - 員工帳號的新增、編輯與刪除（姓名、電話、Email、Device ID）
   - 辦公室固定 IP
   - Google Sheet ID
   - Log/Binding sheet 名稱
@@ -107,7 +108,6 @@ ipconfig getifaddr en0
 
 ## 測試入口
 - 打卡頁：`/index.html`
-- 註冊頁（QR）：`/index.html?mode=register`
 - 管理頁：`/admin.html`
 
 ## 目前實作狀態

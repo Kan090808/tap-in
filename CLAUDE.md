@@ -22,7 +22,7 @@ docs/         # Technical specs and progress notes
 | File | Purpose |
 |------|---------|
 | `web/config.js` | Central config: GAS endpoint URL, office IP, GPS accuracy |
-| `web/app.js` | Main frontend: device UUID, punch-in, registration, GPS/IP |
+| `web/app.js` | Main frontend: device UUID, punch-in, admin employee accounts, GPS/IP |
 | `web/admin.js` | Admin console: login, settings, attendance log queries |
 | `web/sw.js` | Service Worker for offline/PWA support |
 | `gas/Code.gs` | Backend: request handling, anti-fraud, Sheets integration |
@@ -40,7 +40,6 @@ cd web && python3 -m http.server 8080
 ```
 
 - Punch-in UI: `http://localhost:3000/`
-- Register mode: `http://localhost:3000/?mode=register`
 - Admin console: `http://localhost:3000/admin.html`
 
 > Note: GPS and some PWA features require HTTPS in production.
@@ -50,7 +49,7 @@ cd web && python3 -m http.server 8080
 1. Create a Google Apps Script project
 2. Set `SPREADSHEET_ID` in Script Properties
 3. Run `setAdminCredential("admin", "password")` once in the GAS editor
-4. Create an `Employees` sheet with names in column A
+4. Add employees in the admin console using the Device ID shown on each employee's page. Existing `Employees` sheets with names in column A are supported.
 5. Deploy as Web App (Execute as: Me, Access: Anyone)
 6. Copy the Web App URL into `web/config.js`
 

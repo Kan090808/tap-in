@@ -40,6 +40,11 @@ function doPost(e) {
       return handleAdminLogin_(request, runtimeConfig);
     }
 
+    // TEMPORARY: Public reset endpoint. Remove immediately after the administrator completes the reset.
+    if (action === "temporaryAdminPasswordReset") {
+      return handleTemporaryAdminPasswordReset_(request, runtimeConfig);
+    }
+
     if (action === "adminLogout") {
       return handleAdminLogout_(request, runtimeConfig);
     }
@@ -82,6 +87,10 @@ function doPost(e) {
 
     if (action === "employeeGetCalendar") {
       return handleEmployeeGetCalendar_(request, runtimeConfig);
+    }
+
+    if (action === "employeeResolveSession") {
+      return handleEmployeeResolveSession_(request, runtimeConfig);
     }
 
     return jsonResponse_(false, "Unsupported action");
@@ -216,6 +225,29 @@ function handleAdminLogin_(request, runtimeConfig) {
     token: session.token,
     expiresAt: session.expiresAt
   });
+}
+
+// TEMPORARY: This endpoint intentionally has no authentication and must be removed after one use.
+function handleTemporaryAdminPasswordReset_(request, runtimeConfig) {
+  const username = normalizeText_(request.username);
+  const password = String(request.password == null ? "" : request.password);
+  if (!username || username.length > 64) {
+    throw new Error("管理員帳號必須為 1 到 64 個字元");
+  }
+  if (password.length < 12 || password.length > 128) {
+    throw new Error("新密碼長度必須介於 12 到 128 個字元");
+  }
+
+  setAdminCredential(username, password);
+  setAdminSessions_({});
+  setAdminLoginGuards_({});
+  appendAuditLogSafe_(runtimeConfig, {
+    eventType: "ADMIN_PASSWORD_RESET",
+    username: username,
+    detail: "Temporary unauthenticated reset"
+  });
+
+  return jsonResponse_(true, "Admin credentials reset");
 }
 
 function handleAdminLogout_(request, runtimeConfig) {
@@ -651,6 +683,19 @@ function handleEmployeeGetCalendar_(request, runtimeConfig) {
     employeeName: employeeName,
     punchesByDate: punchesByDate,
     leavesByDate: leavesByDate
+  });
+}
+
+function handleEmployeeResolveSession_(request, runtimeConfig) {
+  const deviceUUID = normalizeText_(request.deviceUUID);
+  if (!deviceUUID) {
+    throw new Error("Missing device UUID");
+  }
+  const binding = findBindingByDeviceUUID_(runtimeConfig, deviceUUID);
+  return jsonResponse_(true, "Employee session resolved", {
+    isRegistered: Boolean(binding.employeeName),
+    employeeName: binding.employeeName || "",
+    deviceUUID: deviceUUID
   });
 }
 

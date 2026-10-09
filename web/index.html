@@ -18,77 +18,278 @@
     <link rel="apple-touch-icon" href="./icons/apple-touch-icon-180.png" sizes="180x180" />
     <title>TapIn</title>
     <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./admin.css" />
   </head>
-  <body>
-    <main class="app">
+  <body data-entry-role="employee">
+    <main id="portal-app" class="app portal-app">
       <header class="topbar">
-        <h1>TapIn</h1>
+        <div>
+          <h1>TapIn</h1>
+          <p class="topbar-subtitle">登入後依身份顯示可操作功能</p>
+        </div>
         <div class="topbar-actions">
           <button id="install-btn" class="ghost-btn install-btn" type="button" hidden>新增至桌面</button>
-          <a class="ghost-btn admin-link" href="./admin.html">管理後台</a>
+          <span id="role-badge" class="role-badge" hidden></span>
+          <button id="portal-logout-btn" class="ghost-btn" type="button" hidden>登出</button>
         </div>
       </header>
+      <div class="device-id-bar" aria-label="本機 Device ID">
+        <div class="device-id-details"><span class="label">Device ID</span><code id="device-id-value"></code></div>
+        <button id="copy-device-id-btn" class="ghost-btn" type="button">複製</button>
+      </div>
+      <p id="device-id-copy-status" class="copy-status" role="status" aria-live="polite"></p>
       <p id="install-hint" class="install-hint" hidden></p>
 
-      <nav class="mode-switch" aria-label="頁面模式切換">
-        <a id="mode-punch-link" class="mode-link" href="./index.html">打卡頁</a>
-        <a id="mode-register-link" class="mode-link" href="./index.html?mode=register">註冊頁</a>
-        <a id="mode-leave-link" class="mode-link" href="./index.html?mode=leave">請假</a>
-        <a id="mode-calendar-link" class="mode-link" href="./index.html?mode=calendar">日曆</a>
-      </nav>
-
-      <section class="identity-card">
-        <p class="label">目前識別</p>
-        <p id="name-text" class="name">由系統自動識別</p>
-        <p id="device-text" class="meta"></p>
-      </section>
-
-      <section class="action-area">
-        <button id="punch-btn" class="punch-btn" type="button">一鍵打卡</button>
-      </section>
-
-      <section id="register-area" class="register-area" hidden>
-        <p class="label">註冊姓名</p>
-        <input id="register-name-input" class="register-input" type="text" autocomplete="name" placeholder="請輸入員工姓名" />
-        <button id="register-btn" class="register-btn" type="button">註冊裝置</button>
-      </section>
-
-      <section id="leave-area" class="leave-area" hidden>
-        <p class="label">請假申請</p>
-        <select id="leave-type" class="leave-select">
-          <option value="">請選擇假別</option>
-          <option value="病假">病假</option>
-          <option value="事假">事假</option>
-          <option value="特休">特休</option>
-          <option value="其他">其他</option>
-        </select>
-        <div class="leave-date-row">
-          <div class="leave-date-field">
-            <label class="leave-date-label" for="leave-start">開始日期</label>
-            <input id="leave-start" class="leave-date-input" type="date" />
-          </div>
-          <div class="leave-date-field">
-            <label class="leave-date-label" for="leave-end">結束日期</label>
-            <input id="leave-end" class="leave-date-input" type="date" />
-          </div>
+      <section id="portal-login" class="portal-card">
+        <p class="label">登入入口</p>
+        <h2 class="portal-title">選擇身份</h2>
+        <div class="role-switch" aria-label="登入身份切換">
+          <button id="employee-role-tab" class="role-tab" type="button" aria-pressed="true">員工</button>
+          <button id="admin-role-tab" class="role-tab" type="button" aria-pressed="false">管理員</button>
         </div>
-        <textarea id="leave-reason" class="leave-reason" placeholder="請假原因（必填）" maxlength="200" rows="3"></textarea>
-        <button id="leave-btn" class="leave-btn" type="button">送出請假申請</button>
-      </section>
 
-      <section id="calendar-area" class="calendar-area" hidden>
-        <div class="cal-nav">
-          <button id="emp-cal-prev" class="ghost-btn" type="button">‹ 上月</button>
-          <select id="emp-cal-year"></select>
-          <select id="emp-cal-month"></select>
-          <button id="emp-cal-next" class="ghost-btn" type="button">下月 ›</button>
+        <section id="employee-login-panel" class="portal-panel">
+          <p class="portal-copy">員工以已綁定裝置登入。尚未綁定時，請複製上方 Device ID 傳給管理員，由管理員建立帳號。</p>
+          <div class="portal-actions">
+            <button id="employee-login-btn" type="button" class="primary-btn">以此裝置登入</button>
+          </div>
+        </section>
+
+        <section id="admin-login-panel" class="portal-panel" hidden>
+          <p class="portal-copy">管理員使用帳號密碼登入。登入後只會看到管理功能。</p>
+          <form id="login-form" class="admin-form">
+            <label>
+              帳號
+              <input id="username-input" type="text" autocomplete="username" required />
+            </label>
+            <label>
+              密碼
+              <input id="password-input" type="password" autocomplete="current-password" required />
+            </label>
+            <button id="login-btn" type="submit" class="primary-btn">登入管理後台</button>
+          </form>
+          <section class="temporary-admin-reset">
+            <p class="portal-copy"><strong>臨時管理員密碼重設</strong>：此功能目前不需要驗證，完成後請立即移除。</p>
+            <form id="temporary-admin-reset-form" class="admin-form">
+              <label>
+                新管理員帳號
+                <input id="temporary-admin-reset-username" type="text" autocomplete="username" maxlength="64" required />
+              </label>
+              <label>
+                新密碼（至少 12 個字元）
+                <input id="temporary-admin-reset-password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required />
+              </label>
+              <label>
+                再輸入一次新密碼
+                <input id="temporary-admin-reset-confirm" type="password" autocomplete="new-password" minlength="12" maxlength="128" required />
+              </label>
+              <button id="temporary-admin-reset-btn" type="submit" class="ghost-btn">重設管理員密碼</button>
+            </form>
+          </section>
+        </section>
+
+        <div class="portal-feedback">
+          <p id="portal-status" class="status">請先選擇身份並登入</p>
+          <p id="portal-result" class="result"></p>
         </div>
-        <div id="emp-cal-wrap" class="cal-wrap"></div>
       </section>
 
-      <section class="status-area">
-        <p id="status-text" class="status">準備完成</p>
-        <p id="result-text" class="result"></p>
+      <section id="employee-shell" hidden>
+        <nav class="mode-switch" aria-label="員工功能切換">
+          <a id="mode-punch-link" class="mode-link" href="./index.html?mode=punch">打卡</a>
+          <a id="mode-leave-link" class="mode-link" href="./index.html?mode=leave">請假</a>
+          <a id="mode-calendar-link" class="mode-link" href="./index.html?mode=calendar">日曆</a>
+        </nav>
+
+        <section class="identity-card">
+          <p class="label">目前識別</p>
+          <p id="name-text" class="name">由系統自動識別</p>
+          <p id="device-text" class="meta"></p>
+        </section>
+
+        <section class="action-area">
+          <button id="punch-btn" class="punch-btn" type="button">一鍵打卡</button>
+        </section>
+
+        <section id="leave-area" class="leave-area" hidden>
+          <p class="label">請假申請</p>
+          <select id="leave-type" class="leave-select">
+            <option value="">請選擇假別</option>
+            <option value="病假">病假</option>
+            <option value="事假">事假</option>
+            <option value="特休">特休</option>
+            <option value="其他">其他</option>
+          </select>
+          <div class="leave-date-row">
+            <div class="leave-date-field">
+              <label class="leave-date-label" for="leave-start">開始日期</label>
+              <input id="leave-start" class="leave-date-input" type="date" />
+            </div>
+            <div class="leave-date-field">
+              <label class="leave-date-label" for="leave-end">結束日期</label>
+              <input id="leave-end" class="leave-date-input" type="date" />
+            </div>
+          </div>
+          <textarea id="leave-reason" class="leave-reason" placeholder="請假原因（必填）" maxlength="200" rows="3"></textarea>
+          <button id="leave-btn" class="leave-btn" type="button">送出請假申請</button>
+        </section>
+
+        <section id="calendar-area" class="calendar-area" hidden>
+          <div class="cal-nav">
+            <button id="emp-cal-prev" class="ghost-btn" type="button">‹ 上月</button>
+            <select id="emp-cal-year"></select>
+            <select id="emp-cal-month"></select>
+            <button id="emp-cal-next" class="ghost-btn" type="button">下月 ›</button>
+          </div>
+          <div id="emp-cal-wrap" class="cal-wrap"></div>
+        </section>
+
+        <section class="status-area">
+          <p id="status-text" class="status">等待員工操作</p>
+          <p id="result-text" class="result"></p>
+        </section>
+      </section>
+
+      <section id="admin-shell" class="admin-shell" hidden>
+        <nav class="mode-switch admin-mode-switch" aria-label="管理功能切換">
+          <a id="admin-view-config-link" class="mode-link" href="./index.html?role=admin&view=config">系統設定</a>
+          <a id="admin-view-employees-link" class="mode-link" href="./index.html?role=admin&view=employees">員工帳號</a>
+          <a id="admin-view-logs-link" class="mode-link" href="./index.html?role=admin&view=logs">打卡紀錄</a>
+          <a id="admin-view-leaves-link" class="mode-link" href="./index.html?role=admin&view=leaves">請假審核</a>
+          <a id="admin-view-calendar-link" class="mode-link" href="./index.html?role=admin&view=calendar">管理日曆</a>
+        </nav>
+
+        <section id="admin-employees-panel" class="admin-card" hidden>
+          <div class="admin-headline"><h2>員工帳號</h2><button id="reload-employees-btn" class="ghost-btn" type="button">重新整理</button></div>
+          <p class="portal-copy">請填入員工提供的 Device ID。建立後即可用該裝置登入。</p>
+          <form id="employee-form" class="admin-form">
+            <input id="employee-id-input" type="hidden" />
+            <label>姓名 <input id="employee-name-input" type="text" autocomplete="name" required /></label>
+            <label>電話 <input id="employee-phone-input" type="tel" autocomplete="tel" /></label>
+            <label>Email <input id="employee-email-input" type="email" autocomplete="email" /></label>
+            <label>Device ID <input id="employee-device-input" type="text" autocomplete="off" placeholder="貼上員工傳來的 Device ID" /></label>
+            <div class="employee-form-actions"><button id="save-employee-btn" class="primary-btn" type="submit">新增員工</button><button id="cancel-employee-btn" class="ghost-btn" type="button" hidden>取消編輯</button></div>
+          </form>
+          <div class="table-wrap"><table><thead><tr><th>姓名</th><th>電話</th><th>Email</th><th>Device ID</th><th>操作</th></tr></thead><tbody id="employees-body"></tbody></table></div>
+        </section>
+
+        <section id="admin-config-panel" class="admin-card">
+          <div class="admin-headline">
+            <h2>系統設定</h2>
+          </div>
+
+          <form id="config-form" class="admin-form">
+            <label>
+              Google Sheet ID
+              <input id="spreadsheet-id-input" type="text" required />
+            </label>
+            <label>
+              辦公室固定 IP
+              <input id="office-ip-input" type="text" required />
+            </label>
+            <label>
+              打卡 Log Sheet 名稱
+              <input id="log-sheet-name-input" type="text" required />
+            </label>
+            <label>
+              Device 綁定 Sheet 名稱
+              <input id="binding-sheet-name-input" type="text" required />
+            </label>
+            <label>
+              GPS 精度上限（公尺）
+              <input id="max-gps-input" type="number" min="1" required />
+            </label>
+            <label>
+              請假 Sheet 名稱
+              <input id="leave-sheet-name-input" type="text" required />
+            </label>
+            <button id="save-config-btn" type="submit" class="primary-btn">儲存設定</button>
+          </form>
+        </section>
+
+        <section id="admin-logs-panel" class="admin-card" hidden>
+          <div class="log-tools">
+            <h2>打卡紀錄</h2>
+            <div class="log-actions">
+              <select id="limit-select">
+                <option value="20">最近 20 筆</option>
+                <option value="50" selected>最近 50 筆</option>
+                <option value="100">最近 100 筆</option>
+                <option value="200">最近 200 筆</option>
+              </select>
+              <button id="reload-logs-btn" type="button" class="ghost-btn">重新整理</button>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>時間</th>
+                  <th>員工</th>
+                  <th>裝置 UUID</th>
+                  <th>IP</th>
+                  <th>地點</th>
+                  <th>緯度</th>
+                  <th>經度</th>
+                </tr>
+              </thead>
+              <tbody id="logs-body"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="admin-leaves-panel" class="admin-card" hidden>
+          <div class="log-tools">
+            <h2>請假審核</h2>
+            <div class="log-actions">
+              <select id="leave-status-select">
+                <option value="pending">待審核</option>
+                <option value="all">全部</option>
+                <option value="approved">已批准</option>
+                <option value="rejected">已拒絕</option>
+              </select>
+              <button id="reload-leave-btn" type="button" class="ghost-btn">重新整理</button>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>申請 ID</th>
+                  <th>員工</th>
+                  <th>假別</th>
+                  <th>開始日期</th>
+                  <th>結束日期</th>
+                  <th>原因</th>
+                  <th>狀態</th>
+                  <th>送出時間</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="leave-body"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="admin-calendar-panel" class="admin-card" hidden>
+          <div class="log-tools">
+            <h2>請假日曆</h2>
+            <div class="log-actions cal-nav-actions">
+              <button id="admin-cal-prev" class="ghost-btn" type="button">‹ 上月</button>
+              <select id="admin-cal-year"></select>
+              <select id="admin-cal-month"></select>
+              <button id="admin-cal-next" class="ghost-btn" type="button">下月 ›</button>
+            </div>
+          </div>
+          <div id="admin-cal-wrap" class="cal-wrap"></div>
+        </section>
+
+        <section class="admin-card status-card">
+          <p id="admin-status" class="status">等待管理操作</p>
+          <p id="admin-result" class="result"></p>
+        </section>
       </section>
     </main>
 
