@@ -797,25 +797,25 @@ function initInstallEntry() {
 }
 
 async function getPublicIP() {
-  const controller = new AbortController();
-  const timer = setTimeout(function () {
-    controller.abort();
-  }, CONFIG.REQUEST_TIMEOUT_MS);
-  try {
-    const response = await fetch("https://api.ipify.org?format=json", {
-      signal: controller.signal
-    });
-    if (!response.ok) {
-      throw new Error("IP service returned an error");
+  const endpoints = ["https://api.ipify.org?format=json", "https://api64.ipify.org?format=json"];
+  for (const endpoint of endpoints) {
+    const controller = new AbortController();
+    const timer = setTimeout(function () {
+      controller.abort();
+    }, CONFIG.REQUEST_TIMEOUT_MS / endpoints.length);
+    try {
+      const response = await fetch(endpoint, { signal: controller.signal });
+      if (!response.ok) throw new Error("IP service returned an error");
+      const data = await response.json();
+      if (!data || typeof data.ip !== "string" || !data.ip.trim()) throw new Error("Could not read your IP address");
+      return data.ip.trim();
+    } catch (_error) {
+      // Retry only the read-only IP lookup, never the punch submission.
+    } finally {
+      clearTimeout(timer);
     }
-    const data = await response.json();
-    if (!data || !data.ip) {
-      throw new Error("Could not read your IP address");
-    }
-    return data.ip;
-  } finally {
-    clearTimeout(timer);
   }
+  throw new Error("Could not get your public IP address. No punch was submitted. Check your connection or switch networks, then try again.");
 }
 
 function getCurrentPosition() {
@@ -1277,7 +1277,9 @@ function adminDate(value, includeTime) {
 }
 
 function localToday() {
-  return new Intl.DateTimeFormat("en-CA", {timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
+  const parts = new Intl.DateTimeFormat("en-CA", {timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date());
+  const value = function (type) { return parts.find(function (part) { return part.type === type; }).value; };
+  return value("year") + "-" + value("month") + "-" + value("day");
 }
 
 function initializeTermsDates() {
@@ -1297,7 +1299,8 @@ function termsChangeFields(salaryChanged, scheduleChanged, group) {
   const salaryEffectiveDate = document.getElementById("employee-salary-effective").value + "-01";
   const scheduleEffectiveDate = document.getElementById(group ? "schedule-effective" : "employee-schedule-effective").value;
   if ((salaryChanged || scheduleChanged) && !reason) throw new Error("Enter a reason for the salary or schedule change");
-  const backdated = (salaryChanged && ui.employeeIdInput.value && salaryEffectiveDate < today) || (scheduleChanged && scheduleEffectiveDate < today);
+  const initialCurrentMonth = !ui.employeeIdInput.value && salaryEffectiveDate.slice(0, 7) === today.slice(0, 7);
+  const backdated = (salaryChanged && !initialCurrentMonth && salaryEffectiveDate < today) || (scheduleChanged && scheduleEffectiveDate < today);
   if (backdated && !window.confirm("This backdated correction will recalculate historical reports. Continue?")) throw new Error("Backdated change cancelled");
   return {salaryEffectiveDate:salaryEffectiveDate,scheduleEffectiveDate:scheduleEffectiveDate,effectiveDate:scheduleEffectiveDate,reason:reason,termsReason:reason,allowBackdate:backdated};
 }

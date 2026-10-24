@@ -50,6 +50,45 @@ test('lost punch response is unconfirmed and explicit rejection remains failed',
   }
 });
 
+test('public IP timeout uses dual-stack fallback before submitting one punch',async()=>{
+  const a=app();const lookups=[];const delays=[];const punches=[];
+  a.context.setTimeout=(callback,delay)=>{delays.push(delay);return setTimeout(callback,0);};
+  a.context.navigator.geolocation={getCurrentPosition(resolve){resolve({coords:{latitude:1,longitude:1,accuracy:1}});}};
+  a.context.fetch=async(url,options)=>{
+    lookups.push(url);
+    if(url==='https://api.ipify.org?format=json') return new Promise((resolve,reject)=>options.signal.addEventListener('abort',()=>reject(Object.assign(new Error('fetch is aborted'),{name:'AbortError'}))));
+    if(url==='https://api64.ipify.org?format=json') return {ok:true,json:async()=>({ip:'2001:db8::1'})};
+    if(options&&options.method==='POST') {punches.push(JSON.parse(options.body));return {ok:true,text:async()=>JSON.stringify({ok:true})};}
+    return {ok:true,text:async()=>JSON.stringify({ok:true,serverTimestampMs:Date.now()})};
+  };
+  await a.run('handlePunch("in",true)');
+  assert.equal(a.elements.get('quick-status').textContent,'Punch complete');
+  assert.deepEqual(lookups.slice(0,2),['https://api.ipify.org?format=json','https://api64.ipify.org?format=json']);
+  assert.equal(punches.length,1);
+  assert.equal(punches[0].ipAddress,'2001:db8::1');
+  assert.equal(delays.reduce((sum,value)=>sum+value,0),15000);
+});
+
+test('all public IP timeouts send no punch and restore controls with actionable feedback',async()=>{
+  for(const quick of [true,false]) {
+    const a=app();let lookups=0;
+    a.context.setTimeout=callback=>setTimeout(callback,0);
+    a.context.navigator.geolocation={getCurrentPosition(resolve){resolve({coords:{latitude:1,longitude:1,accuracy:1}});}};
+    a.context.fetch=async(url,options)=>{
+      assert.match(url,/^https:\/\/api(?:64)?\.ipify\.org/);
+      lookups++;
+      return new Promise((resolve,reject)=>options.signal.addEventListener('abort',()=>reject(Object.assign(new Error('fetch is aborted'),{name:'AbortError'}))));
+    };
+    await a.run('handlePunch("in",'+quick+')');
+    assert.equal(lookups,2);
+    const result=a.elements.get(quick?'quick-result':'result-text').textContent;
+    assert.match(result,/Could not get your public IP address/);
+    assert.match(result,/No punch was submitted/);
+    assert.doesNotMatch(result,/fetch is aborted/);
+    for(const id of ['quick-in-btn','quick-out-btn','punch-btn','punch-out-btn']) assert.equal(a.elements.get(id).disabled,false,id);
+  }
+});
+
 test('leave pages append then refresh resets and unknown duration cannot approve',async()=>{
   const a=app(); a.elements.get('leave-status-select').value='pending';
   a.run('var requests=[];postToBackend=async p=>{requests.push(p);return {leaves:[{requestId:String(requests.length),status:"pending",dayPart:requests.length===1?"am":"unknown"}],nextCursor:requests.length===1?"next":""}}');
@@ -91,6 +130,53 @@ test('terms changes require reason and explicit backdate confirmation',()=>{
   assert.throws(()=>a.run('termsChangeFields(true,false,false)'),/cancelled/);
   a.context.window.confirm=()=>true;
   assert.equal(a.run('termsChangeFields(true,false,false).allowBackdate'),true);
+});
+
+test('new employee historical salary uses confirmed frontend payload accepted by GAS',async()=>{
+  const {createGas}=require('./helpers/gas');
+  const gas=createGas();
+  vm.runInContext('termsToday_=()=>"2026-10-24"',gas.context);
+  const a=app();
+  a.run('localToday=()=>"2026-10-24";loadEmployees=async()=>{}');
+  a.elements.get('employee-name-input').value='Historical hire';
+  a.elements.get('employee-salary-input').value='5200';
+  a.elements.get('employee-schedule-input').value='mon-sat';
+  a.context.document.getElementById('employee-salary-effective').value='2026-09';
+  a.context.document.getElementById('employee-schedule-effective').value='2026-10-24';
+  a.context.document.getElementById('employee-terms-reason').value='Verified hire terms';
+  let confirmations=0;
+  a.context.window.confirm=()=>{confirmations++;return true;};
+  a.context.postToBackend=async payload=>{
+    const {token,...request}=payload;
+    const result=gas.admin(request);
+    if(!result.ok) throw new Error(result.message);
+    return result;
+  };
+  await a.run('saveEmployee()');
+  assert.equal(confirmations,1);
+  assert.equal(gas.sheets.get('SalaryHistory').data.at(-1)[2],'2026-09-01');
+});
+
+test('Taipei effective dates are ISO even when locale date formatting uses slashes',()=>{
+  const a=app();
+  a.context.Intl={DateTimeFormat:class {
+    constructor(locale,options){assert.equal(options.timeZone,'Asia/Taipei');}
+    format(){return '10/24/2026';}
+    formatToParts(){return [{type:'month',value:'10'},{type:'literal',value:'/'},{type:'day',value:'24'},{type:'literal',value:'/'},{type:'year',value:'2026'}];}
+  }};
+  assert.equal(a.run('localToday()'),'2026-10-24');
+  a.run('initializeTermsDates()');
+  assert.equal(a.elements.get('employee-salary-effective').value,'2026-10');
+  assert.equal(a.elements.get('employee-schedule-effective').value,'2026-10-24');
+});
+
+test('new employee current-month salary does not require historical confirmation',()=>{
+  const a=app();a.run('localToday=()=>"2026-10-24"');
+  a.context.document.getElementById('employee-terms-reason').value='Initial terms';
+  let confirmations=0;a.context.window.confirm=()=>{confirmations++;return true;};
+  const fields=a.run('termsChangeFields(true,true,false)');
+  assert.equal(fields.allowBackdate,false);
+  assert.equal(confirmations,0);
 });
 
 test('correction history exposes audit metadata and reasoned revocation',async()=>{
