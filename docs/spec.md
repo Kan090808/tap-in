@@ -1,5 +1,9 @@
 # TapIn - System Technical Specifications
 
+> Attendance, leave, schedule, and payroll behavior is defined in [`attendance-rules.md`](attendance-rules.md). This older technical overview should be read together with that rule file.
+
+> The workflow upgrade supersedes the legacy name-roster/QR registration and name/device-only schema descriptions below. Active device bindings now resolve immutable employee IDs; administrators manage bindings, employee removal archives the master record, and salary/schedule versions retain effective-date history. Deploy all four `gas/*.gs` files and follow [`workflow-migration.md`](workflow-migration.md) before using existing historical data. Signed-out homepage punching remains available to active bound devices.
+
 ## 1. Project Overview
 - Name: TapIn
 - Type: PWA (Progressive Web App)
@@ -23,7 +27,7 @@
   - Compares current IP against OFFICE_STATIC_IP.
   - Labels logs as Office (Match) or Remote/Field (Mismatch).
 - Geolocation:
-  - Captures GPS coordinates (Lat/Lng) as secondary proof.
+  - Requires usable GPS coordinates (Lat/Lng) for every device punch and stores them with the record.
   - Accuracy check to prevent GPS spoofing apps.
 - Identity via Device UUID:
   - Uses local Device UUID to identify employee binding records.
@@ -58,7 +62,7 @@
 - Desktop Chromium: Provide explicit "新增至桌面" button via `beforeinstallprompt`.
 - iOS Safari: Show explicit "Share -> Add to Home Screen" guidance flow.
 - Icons: Provide `192x192`, `512x512`, and `apple-touch-icon (180x180)` for install compatibility.
-- Notification: Request permission for Arrival Alerts based on Geofencing.
+- Notification: Optional confirmation after an Office punch. Background geofence arrival alerts remain an unconfirmed legacy requirement and are not implemented by the workflow upgrade.
 
 ## 6. Anti-Fraud Logic
 - Time Source: Uses server-side Google time only, ignores local phone time.

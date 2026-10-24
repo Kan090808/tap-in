@@ -293,7 +293,7 @@ body {
 }
 
 .admin-mode-switch {
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .employee-form-actions {
@@ -555,3 +555,15 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   outline: 2px solid var(--primary);
   outline-offset: 3px;
 }
+
+#quick-punch { margin: 16px 0; }
+#quick-punch .portal-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+#punch-out-btn { margin: 12px auto 0; display: block; min-width: 160px; }
+#punch-out-btn[hidden] { display: none; }
+.schedule-days { display: grid; gap: 8px; }
+.schedule-day { display: grid; grid-template-columns: minmax(110px, 1fr) repeat(2, minmax(90px, 130px)); gap: 8px; align-items: center; }
+.schedule-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 9px 0; border-bottom: 1px solid #dce8e3; }
+.schedule-row span { flex: 1 1 240px; }
+#admin-payroll-panel .log-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+#payroll-summary { white-space: pre-wrap; margin: 12px 0; }
+@media (max-width: 520px) { .schedule-day { grid-template-columns: 1fr 1fr; } .schedule-day label { grid-column: 1 / -1; } }

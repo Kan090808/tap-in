@@ -41,6 +41,14 @@
       <p id="install-hint" class="install-hint" hidden></p>
 
       <p id="portal-loading" class="status" role="status" aria-live="polite">Loading your session...</p>
+      <section id="quick-punch" class="portal-card">
+        <p class="label">Quick attendance</p>
+        <h2 class="portal-title">Clock in or out</h2>
+        <p class="portal-copy">Use a registered device and allow location access.</p>
+        <div class="portal-actions"><button id="quick-in-btn" class="primary-btn" type="button">Clock in</button><button id="quick-out-btn" class="ghost-btn" type="button">Clock out</button></div>
+        <p id="quick-status" class="status" role="status" aria-live="polite">Ready</p>
+        <p id="quick-result" class="result" role="status" aria-live="polite"></p>
+      </section>
       <section id="portal-login" class="portal-card" hidden>
         <p class="label">Sign in</p>
         <h2 class="portal-title">Choose your role</h2>
@@ -82,6 +90,7 @@
           <a id="mode-punch-link" class="mode-link" href="./index.html?mode=punch">Clock in</a>
           <a id="mode-leave-link" class="mode-link" href="./index.html?mode=leave">Leave</a>
           <a id="mode-calendar-link" class="mode-link" href="./index.html?mode=calendar">Calendar</a>
+          <a id="mode-correction-link" class="mode-link" href="./index.html?mode=correction">Missed punch</a>
         </nav>
 
         <section class="identity-card">
@@ -91,7 +100,7 @@
         </section>
 
         <section class="action-area">
-          <button id="punch-btn" class="punch-btn" type="button">Clock in</button>
+          <button id="punch-btn" class="punch-btn" type="button">Clock in</button><button id="punch-out-btn" class="ghost-btn" type="button">Clock out</button>
         </section>
 
         <section id="leave-area" class="leave-area" hidden>
@@ -101,8 +110,8 @@
             <option value="sick">Sick leave</option>
             <option value="personal">Personal leave</option>
             <option value="annual">Annual leave</option>
-            <option value="other">Other</option>
           </select>
+          <label>Duration <select id="leave-duration"><option value="full">Full day</option><option value="am">Morning half day</option><option value="pm">Afternoon half day</option></select></label>
           <div class="leave-date-row">
             <div class="leave-date-field">
               <label class="leave-date-label" for="leave-start">Start date</label>
@@ -114,7 +123,20 @@
             </div>
           </div>
           <textarea id="leave-reason" class="leave-reason" placeholder="Reason for leave (required)" maxlength="200" rows="3"></textarea>
+          <label>Sick leave proof (image or PDF) <input id="leave-proof" type="file" accept="image/*,.pdf,application/pdf" /></label>
           <button id="leave-btn" class="leave-btn" type="button">Submit leave request</button>
+          <h3>My leave requests</h3><div id="employee-leave-history" class="table-wrap"></div>
+        </section>
+
+        <section id="correction-area" class="leave-area" hidden>
+          <h2>Request a missed punch</h2>
+          <form id="correction-form" class="admin-form">
+            <label>Date and time <input id="correction-time" type="datetime-local" required /></label>
+            <label>Direction <select id="correction-direction"><option value="in">Clock in</option><option value="out">Clock out</option></select></label>
+            <label>Reason <textarea id="correction-reason" required maxlength="500"></textarea></label>
+            <button class="primary-btn" type="submit">Send request</button>
+          </form>
+          <h3>My requests</h3><div id="employee-correction-history" class="table-wrap"></div>
         </section>
 
         <section id="calendar-area" class="calendar-area" hidden>
@@ -140,20 +162,41 @@
           <a id="admin-view-logs-link" class="mode-link" href="./index.html?role=admin&view=logs">Attendance logs</a>
           <a id="admin-view-leaves-link" class="mode-link" href="./index.html?role=admin&view=leaves">Leave review</a>
           <a id="admin-view-calendar-link" class="mode-link" href="./index.html?role=admin&view=calendar">Admin calendar</a>
+          <a id="admin-view-schedules-link" class="mode-link" href="./index.html?role=admin&view=schedules">Schedules</a>
+          <a id="admin-view-corrections-link" class="mode-link" href="./index.html?role=admin&view=corrections">Missed punches</a>
+          <a id="admin-view-payroll-link" class="mode-link" href="./index.html?role=admin&view=payroll">Monthly records</a>
         </nav>
 
         <section id="admin-employees-panel" class="admin-card" hidden>
           <div class="admin-headline"><h2>Employee accounts</h2><button id="reload-employees-btn" class="ghost-btn" type="button">Refresh</button></div>
           <p class="portal-copy">Enter the device ID provided by the employee. They can sign in once the account is saved.</p>
+          <label>Employee status <select id="employee-status-filter"><option value="active">Active</option><option value="archived">Archived</option><option value="all">All</option></select></label>
           <form id="employee-form" class="admin-form">
             <input id="employee-id-input" type="hidden" />
             <label>Name <input id="employee-name-input" type="text" autocomplete="name" required /></label>
             <label>Phone <input id="employee-phone-input" type="tel" autocomplete="tel" /></label>
             <label>Email <input id="employee-email-input" type="email" autocomplete="email" /></label>
             <label>Device ID <input id="employee-device-input" type="text" autocomplete="off" placeholder="Paste the employee's device ID" /></label>
+            <label>Schedule group <select id="employee-schedule-input"></select></label>
+            <label>Monthly base salary (MYR) <input id="employee-salary-input" type="number" min="0" step="0.01" /></label>
+            <label>Salary effective month <input id="employee-salary-effective" type="month" /></label>
+            <label>Schedule effective date <input id="employee-schedule-effective" type="date" /></label>
+            <label>Reason for terms change <input id="employee-terms-reason" maxlength="500" /></label>
+            <p class="portal-copy">Salary changes take effect on the first day of the selected month. Backdated changes recalculate historical reports and require a reason and confirmation.</p>
             <div class="employee-form-actions"><button id="save-employee-btn" class="primary-btn" type="submit">Add employee</button><button id="cancel-employee-btn" class="ghost-btn" type="button" hidden>Cancel editing</button></div>
           </form>
-          <div class="table-wrap"><table><thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>Device ID</th><th>Actions</th></tr></thead><tbody id="employees-body"></tbody></table></div>
+          <div class="table-wrap"><table><thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>Device ID</th><th>Status</th><th>Actions</th></tr></thead><tbody id="employees-body"></tbody></table></div>
+          <div id="employment-terms-history" class="table-wrap"></div>
+          <form id="historical-terms-form" class="admin-form" hidden>
+            <h3>Audited historical correction · <span id="historical-terms-employee"></span></h3>
+            <p class="portal-copy">Record verified historical terms, including an unchanged value at an earlier date. Only the selected terms are corrected. Historical reports will recalculate.</p>
+            <label>Salary to correct (MYR, optional) <input id="historical-terms-salary" type="number" min="0" step="0.01" /></label>
+            <label>Salary effective month <input id="historical-terms-month" type="month" /></label>
+            <label>Schedule to correct (optional) <select id="historical-terms-schedule"></select></label>
+            <label>Schedule effective date <input id="historical-terms-date" type="date" /></label>
+            <label>Evidence and reason <input id="historical-terms-reason" maxlength="500" required /></label>
+            <button type="submit" class="primary-btn">Record historical correction</button>
+          </form>
         </section>
 
         <section id="admin-config-panel" class="admin-card">
@@ -231,6 +274,7 @@
                 <option value="all">All</option>
                 <option value="approved">Approved</option>
                 <option value="rejected">Rejected</option>
+                <option value="cancelled">Cancelled</option>
               </select>
               <button id="reload-leave-btn" type="button" class="ghost-btn">Refresh</button>
             </div>
@@ -243,10 +287,12 @@
                   <th>Request ID</th>
                   <th>Employee</th>
                   <th>Leave type</th>
+                  <th>Duration</th>
                   <th>Start date</th>
                   <th>End date</th>
                   <th>Reason</th>
                   <th>Status</th>
+                  <th>Cancellation</th>
                   <th>Submitted at</th>
                   <th>Actions</th>
                 </tr>
@@ -254,6 +300,7 @@
               <tbody id="leave-body"></tbody>
             </table>
           </div>
+          <button id="leave-load-more" type="button" class="ghost-btn" hidden>Load more</button>
         </section>
 
         <section id="admin-calendar-panel" class="admin-card" hidden>
@@ -267,6 +314,19 @@
             </div>
           </div>
           <div id="admin-cal-wrap" class="cal-wrap"></div>
+        </section>
+
+        <section id="admin-schedules-panel" class="admin-card" hidden>
+          <h2>Schedule groups</h2>
+          <form id="schedule-form" class="admin-form"><input id="schedule-id" type="hidden" /><label>Group name <input id="schedule-name" required /></label><label>Effective date <input id="schedule-effective" type="date" required /></label><label>Reason for change <input id="schedule-terms-reason" maxlength="500" required /></label><p class="portal-copy">Changes create a new version. Backdated changes recalculate affected historical reports.</p><div id="schedule-days" class="schedule-days"></div><button class="primary-btn" type="submit">Save group</button><button id="schedule-cancel" class="ghost-btn" type="button">Clear</button></form>
+          <div id="schedule-list" class="table-wrap"></div>
+        </section>
+        <section id="admin-corrections-panel" class="admin-card" hidden>
+          <h2>Missed punch requests and history</h2><label>Status <select id="correction-status-filter"><option value="pending">Pending</option><option value="all">All</option><option value="approved">Approved</option><option value="rejected">Rejected</option><option value="revoked">Revoked</option></select></label><button id="correction-refresh" type="button" class="ghost-btn">Refresh</button><div id="correction-review" class="table-wrap"></div>
+          <h3>Add a missed punch</h3><form id="admin-correction-form" class="admin-form"><label>Employee <select id="admin-correction-employee" required></select></label><label>Date and time <input id="admin-correction-time" type="datetime-local" required /></label><label>Direction <select id="admin-correction-direction"><option value="in">Clock in</option><option value="out">Clock out</option></select></label><label>Replaces revoked request (optional) <input id="admin-correction-replaces" readonly /></label><label>Reason <textarea id="admin-correction-reason" required maxlength="500"></textarea></label><button class="primary-btn" type="submit">Add punch</button></form>
+        </section>
+        <section id="admin-payroll-panel" class="admin-card" hidden>
+          <h2>Monthly attendance and pay</h2><div class="log-actions"><select id="payroll-employee"></select><input id="payroll-month" type="month" /><button id="payroll-load" class="ghost-btn" type="button">Load</button><button id="payroll-export" class="primary-btn" type="button">Export CSV</button></div><div id="payroll-summary"></div><div id="payroll-audit" class="table-wrap"></div><div id="payroll-records" class="table-wrap"></div>
         </section>
 
         <section class="admin-card status-card">
