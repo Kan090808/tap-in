@@ -59,6 +59,7 @@ test('term validation rejects midmonth salary, invalid calendar dates and unaudi
   const saved = { ...employee, monthlySalary: 5600 };
   assert.throws(() => c.validateEmployeeTerms_({ salaryEffectiveMonth: '2026-11-15', reason: 'Raise' }, employee, saved, {}), /first day/);
   assert.throws(() => c.validateEmployeeTerms_({ salaryEffectiveMonth: '2026-02-01', reason: 'Correction' }, employee, saved, {}), /backdat/i);
+  assert.throws(() => c.validateEmployeeTerms_({ salaryEffectiveMonth: '2026-10-01', reason: 'Correction', allowBackdate: false }, employee, saved, {}), /backdat/i);
   assert.throws(() => c.validateScheduleTerms_({ effectiveDate: '2026-02-30', reason: 'Correction', allowBackdate: true }, {}, {}), /date/i);
   assert.equal(Object.keys(sheets).length, 0);
 });
@@ -100,6 +101,30 @@ test('schedule edits update an already planned assignment without rewriting its 
   assert.equal(terms.scheduleForDate('2026-10-31').days.length, 1);
   assert.equal(terms.scheduleForDate('2026-11-16').groupId, 'g2');
   assert.equal(terms.scheduleForDate('2026-12-05').days.length, 0);
+});
+
+test('creating an employee leaves a blank legacy id untouched and accepts this month without backdate confirmation', () => {
+  const { createGas } = require('./helpers/gas');
+  const gas = createGas({ Employees: [
+    ['Employee Name', 'Phone', 'Email', 'Device UUID', 'Employee ID', 'Schedule Group ID', 'Monthly Salary MYR', 'Status', 'Archived At', 'Archived By'],
+    ['Legacy', '555', 'legacy@example.com', 'legacy-device', '', 'mon-sat', 4000, 'active', '', ''],
+  ] });
+  vm.runInContext('termsToday_=()=>"2026-10-24"', gas.context);
+  const saved = gas.admin({
+    action: 'adminSaveEmployee', name: 'New hire', monthlySalary: 5200, scheduleGroupId: 'mon-sat',
+    salaryEffectiveDate: '2026-10-01', scheduleEffectiveDate: '2026-10-24', reason: 'Initial terms', allowBackdate: false
+  });
+  assert.equal(saved.ok, true, saved.message);
+  const rows = gas.sheets.get('Employees').data;
+  assert.equal(rows[1][0], 'Legacy');
+  assert.equal(rows[1][4], '');
+  assert.equal(Number(rows[1][6]), 4000);
+  assert.equal(rows[2][0], 'New hire');
+  assert.ok(rows[2][4]);
+  const history = gas.admin({ action: 'adminGetEmploymentTerms', employeeId: saved.employee.employeeId });
+  assert.equal(history.ok, true, history.message);
+  assert.equal(history.salaries.at(-1).effectiveDate, '2026-10-01');
+  assert.equal(history.salaries.at(-1).provenance, 'employee-creation');
 });
 
 test('new employees have verified creation terms rather than an invented historical salary baseline', () => {

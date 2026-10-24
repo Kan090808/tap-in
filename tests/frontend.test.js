@@ -170,6 +170,21 @@ test('Taipei effective dates are ISO even when locale date formatting uses slash
   assert.equal(a.elements.get('employee-schedule-effective').value,'2026-10-24');
 });
 
+test('new employee save does not treat a blank stored id as the employee being edited', async () => {
+  const a = app();
+  a.run('localToday=()=>"2026-10-24";employees=[{employeeId:"",name:"Legacy",monthlySalary:5200,scheduleGroupId:"mon-sat",status:"active"}];');
+  a.elements.get('employee-name-input').value = 'New hire';
+  a.elements.get('employee-salary-input').value = '5200';
+  a.elements.get('employee-schedule-input').value = 'mon-sat';
+  a.context.document.getElementById('employee-salary-effective').value = '2026-10';
+  a.context.document.getElementById('employee-schedule-effective').value = '2026-10-24';
+  let calls = 0;
+  a.context.window.confirm = () => { throw new Error('confirmation should not be required'); };
+  a.context.postToBackend = async () => { calls += 1; return {}; };
+  await assert.rejects(a.run('saveEmployee()'), /Enter a reason for the salary or schedule change/);
+  assert.equal(calls, 0);
+});
+
 test('new employee current-month salary does not require historical confirmation',()=>{
   const a=app();a.run('localToday=()=>"2026-10-24"');
   a.context.document.getElementById('employee-terms-reason').value='Initial terms';

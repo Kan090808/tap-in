@@ -12,7 +12,7 @@ Keep the existing user changes when deploying this version. The current attendan
 2. Deploy **all four** Apps Script source files: `gas/Code.gs`, `gas/Identity.gs`, `gas/Integrity.gs`, and `gas/Terms.gs`, plus the existing manifest. They share one Apps Script project/global scope. Pasting only `Code.gs` is no longer sufficient.
 3. Configure the test spreadsheet ID and existing admin credential. Confirm GET `?action=publicConfig` responds with `apiVersion: 2`. The new frontend refuses writes to an older backend.
 4. Run the migration preview, then checkpoint initialization, then resolve historical rows as described below. A successful checkpoint response does not mean every historical row has been resolved.
-5. Verify reports and corrections against known records, then deploy the frontend with the current service-worker cache version (`tapin-v18`). Use matching backend and frontend versions. Check both a clean browser and an already installed PWA.
+5. Verify reports and corrections against known records, then deploy the frontend with the current service-worker cache version (`tapin-v19`). Use matching backend and frontend versions. Check both a clean browser and an already installed PWA.
 
 ## Migration API
 

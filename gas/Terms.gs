@@ -42,12 +42,13 @@ function latestTerm_(items, date) {
   }).pop() || null;
 }
 
-function validateTermDate_(value, salary, request) {
+function validateTermDate_(value, salary, request, initialEmployment) {
   let date = normalizeText_(value);
   if (salary && /^\d{4}-\d{2}$/.test(date)) date += '-01';
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || date < '1900-01-01' || date > '9999-12-31' || new Date(date + 'T12:00:00Z').toISOString().slice(0, 10) !== date) throw new Error('A valid effective date is required');
   if (salary && date.slice(8) !== '01') throw new Error("Salary changes require a month's first day");
-  if (date < termsToday_() && request.allowBackdate !== true) throw new Error('Backdated terms require explicit confirmation. Affected historical reports will recalculate.');
+  const creationMonth = initialEmployment === true && salary && date.slice(0, 7) === termsToday_().slice(0, 7);
+  if (date < termsToday_() && request.allowBackdate !== true && !creationMonth) throw new Error('Backdated terms require explicit confirmation. Affected historical reports will recalculate.');
   return date;
 }
 
@@ -70,8 +71,7 @@ function employeeTermPlan_(request, existing, saved, cfg) {
   if (!Number.isFinite(Number(saved.monthlySalary)) || Number(saved.monthlySalary) < 0) throw new Error('Monthly salary must be a nonnegative number');
   const reason = termReason_(request);
   const requestedSalaryDate = request.salaryEffectiveDate || request.salaryEffectiveMonth || request.effectiveMonth || (!existing ? termsToday_().slice(0, 7) + '-01' : defaultSalaryDate_());
-  const initialCurrentMonth = !existing && normalizeText_(requestedSalaryDate).slice(0, 7) === termsToday_().slice(0, 7);
-  const salaryDate = salaryChanged ? validateTermDate_(requestedSalaryDate, true, initialCurrentMonth ? Object.assign({}, request, { allowBackdate: true }) : request) : '';
+  const salaryDate = salaryChanged ? validateTermDate_(requestedSalaryDate, true, request, !existing) : '';
   const scheduleDate = scheduleChanged ? validateTermDate_(request.scheduleEffectiveDate || request.effectiveDate || termsToday_(), false, request) : '';
   if (!getScheduleGroups_(cfg).some(function (group) { return group.groupId === saved.scheduleGroupId; })) throw new Error('Schedule group not found');
   const versions = termRows_(cfg, 'schedules').filter(function (item) { return item.groupId === saved.scheduleGroupId; });

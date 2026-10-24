@@ -1383,7 +1383,8 @@ async function loadEmployees() {
 }
 
 async function saveEmployee() {
-  const current = employees.find(function (employee) { return employee.employeeId === ui.employeeIdInput.value; });
+  const submittedId = ui.employeeIdInput.value;
+  const current = submittedId ? employees.find(function (employee) { return employee.employeeId === submittedId; }) : undefined;
   const salaryChanged = !current || Number(current.monthlySalary) !== Number(ui.employeeSalaryInput.value);
   const scheduleChanged = !current || current.scheduleGroupId !== ui.employeeScheduleInput.value;
   const terms = termsChangeFields(salaryChanged, scheduleChanged, false);

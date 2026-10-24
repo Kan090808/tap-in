@@ -413,7 +413,7 @@ function handleAdminSaveEmployee_(request, runtimeConfig) {
   try {
     const sheet = getEmployeeSheet_(runtimeConfig);
     const employees = readEmployees_(sheet, runtimeConfig);
-    const existing = employees.filter(function (item) { return item.employeeId === employeeId; })[0];
+    const existing = employeeId ? employees.filter(function (item) { return item.employeeId === employeeId; })[0] : undefined;
     if (existing && existing.status === "archived") throw new Error("Archived employee accounts cannot be edited");
     const scheduleGroupId = requestedScheduleGroupId || (existing && existing.scheduleGroupId) || "mon-sat";
     const monthlySalary = Number(requestedMonthlySalary == null || requestedMonthlySalary === "" ? (existing ? existing.monthlySalary : 0) : requestedMonthlySalary);
