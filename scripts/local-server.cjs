@@ -104,7 +104,7 @@ function createLocalServer({ dataFile = path.join(root, '.local/tapin.json'), al
       if (!file.startsWith(webRoot + path.sep)) return json(response, 404, { ok: false, message: 'File not found' });
       let data;
       try { data = fs.readFileSync(file); } catch (error) { if (error.code === 'ENOENT' || error.code === 'EISDIR') return json(response, 404, { ok: false, message: 'File not found' }); throw error; }
-      if (path.basename(file) === 'index.html') data = Buffer.from(data.toString().replace('<main ', '<p class="status" role="status">Local test mode: data stays on this computer. Google services are simulated. Admin sign-in: admin / test-password.</p>\n    <main '));
+      if (path.basename(file) === 'index.html') data = Buffer.from(data.toString().replace('<main ', '<details class="local-notice"><summary>Local test mode</summary><p>Data stays on this computer. Google services are simulated.</p><p>Admin: admin / test-password</p></details>\n    <main '));
       const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.webmanifest': 'application/manifest+json', '.svg': 'image/svg+xml', '.png': 'image/png' };
       response.writeHead(200, { 'Content-Type': (mime[path.extname(file)] || 'application/octet-stream') + (['.html', '.js', '.css'].includes(path.extname(file)) ? '; charset=utf-8' : ''), 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
       response.end(request.method === 'HEAD' ? undefined : data);

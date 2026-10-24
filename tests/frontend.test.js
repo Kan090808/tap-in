@@ -99,7 +99,8 @@ test('correction history exposes audit metadata and reasoned revocation',async()
   await a.run('loadAdminCorrections()');
   const table=a.elements.get('correction-review').children[0];
   const row=table.children[0].children[0];
-  assert.ok(row.children.some(cell=>cell.textContent==='Boss · 2026-10-23'));
+  assert.match(row.children[0].innerHTML,/<dt>Reviewed by<\/dt><dd>Boss<\/dd>/);
+  assert.match(row.children[0].innerHTML,/23 Oct 2026/);
   const revoke=row.children.at(-1).children[0];
   await revoke.onclick();
   const payload=a.run('calls.find(p=>p.action==="adminRevokeCorrection")');
@@ -134,4 +135,44 @@ test('same-value historical salary correction explicitly uses terms endpoint onl
   assert.equal(payload.action,'adminSaveEmploymentTerms');assert.equal(payload.monthlySalary,5200);
   assert.equal(payload.salaryEffectiveDate,'2026-01-01');assert.equal(payload.allowBackdate,true);
   assert.equal(payload.reason,'Verified old payslip');assert.equal(payload.scheduleGroupId,undefined);
+});
+
+test('editing an employee opens the collapsed editor with their current values',()=>{
+  const a=app();
+  a.run('employees=[{employeeId:"e1",name:"Alex",phone:"123",deviceUUID:"d1",scheduleGroupId:"mon-fri",monthlySalary:5200,status:"active"}];loadEmploymentTerms=async()=>{};renderEmployees()');
+  const row=a.elements.get('employees-body').children[0];
+  const edit=row.children.at(-1).children[0];
+  edit.listeners.click();
+  assert.equal(a.elements.get('employee-editor').open,true);
+  assert.equal(a.elements.get('employee-name-input').value,'Alex');
+  assert.equal(a.elements.get('employee-salary-input').value,5200);
+});
+
+test('replacing a revoked correction opens the direct-entry form and preserves the source link',async()=>{
+  const a=app();
+  a.run('postToBackend=async p=>p.action==="adminGetCorrections"?{corrections:[{requestId:"old",employeeId:"e1",status:"revoked",date:"2026-10-01",time:"09:00",punchType:"in"}]}:{employees:[{employeeId:"e1",name:"Alex"}]}');
+  await a.run('loadAdminCorrections()');
+  const row=a.elements.get('correction-review').children[0].children[0].children[0];
+  row.children.at(-1).children[0].onclick();
+  assert.equal(a.elements.get('correction-editor').open,true);
+  assert.equal(a.elements.get('admin-correction-replaces').value,'old');
+  assert.equal(a.elements.get('admin-correction-time').value,'2026-10-01T09:00');
+});
+
+test('one payroll adjustment form saves only supplied fields and keeps a reason',async()=>{
+  const a=app();
+  a.run('var calls=[];postToBackend=async p=>{calls.push(p);return {ok:true}};loadPayroll=async()=>{};openPayrollAdjustment({date:"2026-10-01",workedHours:8,absenceDays:0},"e1",2026,10)');
+  assert.equal(a.elements.get('payroll-adjustment-dialog').open,true);
+  a.elements.get('payroll-adjustment-pay').value='50';
+  a.elements.get('payroll-adjustment-reason').value='Reviewed allowance';
+  await a.run('savePayrollAdjustment()');
+  const payload=a.run('calls[0]');
+  assert.equal(payload.action,'adminSaveMonthlyAdjustment');
+  assert.equal(payload.employeeId,'e1');
+  assert.equal(payload.date,'2026-10-01');
+  assert.equal(payload.payAmount,50);
+  assert.equal(payload.reason,'Reviewed allowance');
+  assert.equal(payload.workHours,undefined);
+  assert.equal(payload.absenceDays,undefined);
+  assert.equal(a.elements.get('payroll-adjustment-dialog').open,false);
 });

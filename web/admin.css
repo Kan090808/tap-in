@@ -235,3 +235,220 @@ th {
 tbody tr:hover {
   background: #f8fbfa;
 }
+
+.portal-app.is-admin {
+  --primary: #245a49;
+  --primary-press: #194333;
+  max-width: 1260px;
+  padding: 28px 28px 40px;
+}
+
+.is-admin .topbar {
+  background: transparent;
+  color: #223e33;
+  padding: 0 0 24px;
+  margin: 0;
+  border-radius: 0;
+  border-bottom: 1px solid #dce5df;
+}
+
+.is-admin .topbar .brand-wordmark { color: #223e33; font-size: 32px; }
+.is-admin .brand-wordmark span { color: #659c78; }
+.is-admin .topbar .ghost-btn { background: #fff; color: #345547; border-color: #dce5df; }
+.is-admin .topbar .role-badge { color: #517461; background: #e6efe8; }
+.is-admin .topbar-subtitle,
+.is-admin .device-id-bar,
+.is-admin #device-id-copy-status { display: none; }
+
+#admin-shell {
+  display: grid;
+  grid-template-columns: 170px minmax(0, 1fr);
+  align-items: start;
+  gap: 24px;
+  margin-top: 24px;
+}
+
+#admin-shell .admin-mode-switch {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  position: sticky;
+  top: 20px;
+}
+
+#admin-shell .mode-link {
+  justify-content: flex-start;
+  min-height: 46px;
+  padding: 0 16px;
+  font-size: 14px;
+  color: #64766b;
+  font-weight: 550;
+}
+
+#admin-shell .mode-link.active { background: #245a49; color: #fff; border-color: #245a49; box-shadow: none; }
+#admin-shell .mode-link:hover:not(.active) { background: #e6eee7; color: #223e33; }
+#admin-shell .admin-card { grid-column: 2; min-width: 0; padding: 28px; margin: 0; border: 1px solid #e3e9e4; border-radius: 20px; box-shadow: 0 6px 24px #203c3205; }
+#admin-shell .status-card { background: transparent; border: 0; padding: 0 8px; }
+#admin-shell .status { font-size: 13px; }
+#admin-shell h2 { font-size: 25px; font-weight: 650; letter-spacing: -.6px; margin: 0; }
+#admin-shell h3 { font-size: 16px; margin: 16px 0 12px; }
+#admin-shell .log-tools { margin-top: 0; }
+#admin-shell .log-actions { flex-wrap: wrap; }
+#admin-shell .log-tools .log-actions:not(.cal-nav-actions) { flex-wrap: nowrap; }
+#admin-shell .log-tools .log-actions:not(.cal-nav-actions) select { width: auto; }
+
+#admin-shell button,
+.is-admin .topbar button,
+#admin-shell .link-btn { min-height: 44px; padding: 10px 16px; font-size: 14px; font-weight: 600; justify-content: center; cursor: pointer; border-radius: 10px; }
+#admin-shell .primary-btn { background: #245a49; }
+#admin-shell .primary-btn:hover { background: #194333; }
+#admin-shell .ghost-btn { border-color: #d9e3dc; background: #fff; color: #345547; }
+#admin-shell .ghost-btn:hover { background: #f0f5f0; }
+#admin-shell button:disabled { opacity: .5; cursor: wait; }
+#admin-shell input:not([type="checkbox"]):not([type="hidden"]),
+#admin-shell select,
+#admin-shell textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 46px;
+  padding: 10px 12px;
+  border: 1px solid #d5e0d8;
+  border-radius: 10px;
+  font: inherit;
+  font-size: 16px;
+  color: #223e33;
+  background: #fff;
+}
+#admin-shell input[type="checkbox"] { width: 20px; height: 20px; accent-color: #245a49; }
+#admin-shell textarea { min-height: 94px; resize: vertical; }
+#admin-shell label { color: #64766b; font-size: 13px; }
+#admin-shell .admin-form { gap: 18px; margin-top: 20px; }
+#admin-shell .admin-form label { gap: 7px; }
+#admin-shell .admin-filter { display: flex; gap: 12px; align-items: center; margin: 22px 0 16px; }
+#admin-shell .admin-filter select { width: auto; min-width: 145px; }
+#admin-shell .admin-editor { border: 1px solid #dce5df; border-radius: 12px; padding: 0 18px; margin-top: 22px; background: #fbfcfa; }
+#admin-shell .admin-editor > summary,
+#admin-shell .record-details > summary { cursor: pointer; min-height: 48px; padding: 14px 0; color: #245a49; font-size: 14px; font-weight: 600; }
+#admin-shell .admin-editor[open] { padding-bottom: 20px; }
+#admin-shell .admin-editor > .admin-form { margin-top: 8px; }
+#admin-shell .form-note { font-size: 13px; margin: 0; }
+#admin-shell .employee-form-actions { flex-wrap: wrap; }
+#admin-shell .table-wrap { border: 0; border-radius: 0; margin-top: 22px; overflow: visible; }
+#admin-shell .table-wrap:empty { display: none; }
+#admin-shell table { min-width: 0; width: 100%; table-layout: auto; }
+#admin-shell th { background: #f3f6f1; color: #738076; font-weight: 500; font-size: 12px; }
+#admin-shell th, #admin-shell td { padding: 16px 12px; white-space: normal; overflow-wrap: anywhere; vertical-align: top; border-bottom: 1px solid #e8eee8; line-height: 1.5; }
+#admin-shell td { font-size: 14px; }
+#admin-shell th:first-child { border-radius: 10px 0 0 10px; }
+#admin-shell th:last-child { border-radius: 0 10px 10px 0; }
+#admin-shell .record-main { font-weight: 650; color: #223e33; }
+#admin-shell .record-name { display: block; font-weight: 650; }
+#admin-shell .record-subtitle { display: block; font-weight: 400; color: #77867b; font-size: 12px; margin-top: 4px; }
+#admin-shell .record-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+#admin-shell .record-details { font-weight: 400; }
+#admin-shell .record-details > summary { padding: 10px 0; min-height: 44px; }
+#admin-shell .record-details p { margin: 6px 0; }
+#admin-shell .record-details dl { display: grid; gap: 6px; margin: 8px 0; }
+#admin-shell .record-details dt { color: #77867b; font-size: 12px; }
+#admin-shell .record-details dd { margin: 0 0 6px; overflow-wrap: anywhere; }
+#admin-shell .record-meta { display: grid; gap: 6px; margin: 8px 0; }
+#admin-shell .record-meta dt { font-size: 12px; color: #77867b; }
+#admin-shell .record-meta dd { margin: 0 0 6px; overflow-wrap: anywhere; }
+#admin-shell .status-badge { display: inline-flex; border-radius: 999px; padding: 4px 10px; font-size: 12px; font-weight: 600; background: #edf2eb; color: #5c7161; white-space: nowrap; }
+#admin-shell .status-badge { justify-self: start; }
+#admin-shell .record-actions:empty { display: none; }
+.local-notice { max-width: 1204px; margin: 10px auto 0; padding: 0 16px; color: #718077; font-size: 12px; }
+.local-notice summary { min-height: 32px; cursor: pointer; padding: 8px 0; }
+.local-notice p { margin: 4px 0; line-height: 1.5; }
+#admin-shell .status-badge.pending, #admin-shell .status-pending { background: #fff1d3; color: #88601b; }
+#admin-shell .status-badge.approved, #admin-shell .status-badge.active, #admin-shell .status-approved, #admin-shell .status-active { background: #e3f1e7; color: #2a7145; }
+#admin-shell .status-badge.rejected, #admin-shell .status-badge.revoked, #admin-shell .status-rejected, #admin-shell .status-revoked { background: #f9e8e4; color: #a04d3b; }
+#admin-shell .empty-state { text-align: center; color: #7c897e; padding: 40px 16px; font-size: 14px; }
+#admin-shell #payroll-summary { white-space: normal; margin: 24px 0; }
+#admin-shell .payroll-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+#admin-shell .payroll-metric { padding: 20px; border-radius: 14px; background: #f3f6f1; }
+#admin-shell .payroll-metric.primary { background: #245a49; color: #fff; }
+#admin-shell .metric-label { display: block; font-size: 12px; opacity: .75; margin-bottom: 10px; }
+#admin-shell .metric-value { display: block; font-size: 25px; font-weight: 650; letter-spacing: -.7px; overflow-wrap: anywhere; }
+#admin-shell .payroll-filters > select { flex: 2 1 180px; width: auto; }
+#admin-shell .payroll-filters > input { flex: 1 1 150px; width: auto; }
+#admin-shell .schedule-row { padding: 16px 0; gap: 12px; }
+#admin-shell .schedule-day { grid-template-columns: minmax(120px, 1fr) repeat(2, minmax(90px, 130px)); }
+#admin-shell .schedule-day label { display: flex; align-items: center; gap: 10px; min-height: 44px; }
+#admin-shell .cal-nav-actions { gap: 6px; flex-wrap: nowrap; }
+#admin-shell .cal-nav-actions select { min-width: 0; width: auto; }
+#admin-shell .cal-nav-actions button { min-width: 44px; padding: 8px; font-size: 22px; }
+#admin-shell .cal-day { min-height: 90px; padding: 8px 4px; box-shadow: none; background: #f3f6f1; }
+#admin-shell .admin-dialog { width: min(480px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); overflow-y: auto; border: 0; border-radius: 20px; padding: 28px; color: #223e33; background: #fff; box-shadow: 0 24px 90px #173e3533; }
+#admin-shell .admin-dialog::backdrop { background: #17312877; backdrop-filter: blur(3px); }
+#admin-shell .admin-dialog .admin-form { margin-top: 0; }
+#admin-shell .dialog-date { margin: 8px 0 0; color: #77867b; font-size: 14px; }
+#admin-shell .admin-dialog .employee-form-actions { justify-content: flex-end; }
+#admin-shell #payroll-adjustment-error:empty { display: none; }
+
+@media (min-width: 1000px) {
+  #admin-shell #employee-form { grid-template-columns: 1fr 1fr; }
+  #admin-shell #employee-form .form-note,
+  #admin-shell #employee-form .employee-form-actions { grid-column: 1 / -1; }
+}
+
+@media (min-width: 761px) {
+  #admin-shell td.record-actions,
+  #admin-shell #employees-body td:last-child { display: table-cell; }
+  #admin-shell td.record-actions button { margin: 0 6px 8px 0; }
+}
+
+@media (max-width: 760px) {
+  .portal-app.is-admin { padding: 20px 16px 32px; }
+  .is-admin .topbar { padding-bottom: 16px; }
+  .is-admin .topbar .brand-wordmark { font-size: 29px; }
+  .is-admin .topbar .role-badge { display: none; }
+  #admin-shell { display: block; margin-top: 0; }
+  #admin-shell .admin-mode-switch { flex-direction: row; position: sticky; top: 0; z-index: 5; overflow-x: auto; border-radius: 0; margin: 0 -16px 20px; padding: 12px 16px; background: #f4f8f7; scrollbar-width: none; gap: 6px; }
+  #admin-shell .admin-mode-switch::-webkit-scrollbar { display: none; }
+  #admin-shell .mode-link { flex: 0 0 auto; padding: 0 14px; min-height: 44px; }
+  #admin-shell .admin-card { padding: 20px 16px; border-radius: 16px; margin-bottom: 14px; }
+  #admin-shell h2 { font-size: 23px; }
+  #admin-shell .log-tools { align-items: stretch; gap: 18px; }
+  #admin-shell .log-actions { gap: 8px; }
+  #admin-shell .log-actions select { flex: 1 1 120px; }
+  #admin-shell .log-actions button { flex: 0 1 auto; }
+  #admin-shell .table-wrap { margin-top: 20px; }
+  #admin-shell table, #admin-shell tbody { display: block; }
+  #admin-shell thead { display: none; }
+  #admin-shell tbody tr { display: block; padding: 18px 0; border-bottom: 1px solid #e3eae3; }
+  #admin-shell tbody tr:first-child { padding-top: 0; }
+  #admin-shell tbody tr:last-child { border-bottom: 0; padding-bottom: 0; }
+  #admin-shell tbody tr:hover { background: transparent; }
+  #admin-shell td { display: block; padding: 6px 0; border: 0; }
+  #admin-shell td[data-label] { display: grid; grid-template-columns: 80px minmax(0, 1fr); gap: 10px; }
+  #admin-shell td[data-label]::before { content: attr(data-label); font-size: 12px; color: #7b887e; padding-top: 2px; }
+  #admin-shell td.record-main { font-size: 16px; padding: 0 0 10px; }
+  #admin-shell td.record-main::before, #admin-shell td.record-actions::before { display: none; }
+  #admin-shell td.record-main { display: block; }
+  #admin-shell td.record-actions, #admin-shell #employees-body td:last-child { display: flex; gap: 8px; padding-top: 14px; flex-wrap: wrap; }
+  #admin-shell .record-actions button, #admin-shell .record-actions .link-btn { flex: 1 1 auto; }
+  #admin-shell td[colspan] { text-align: center; padding: 24px 8px; color: #7b887e; }
+  #admin-shell td[colspan]::before { display: none; }
+  #admin-shell .admin-editor { margin-top: 20px; padding: 0 14px; }
+  #admin-shell .admin-editor[open] { padding-bottom: 16px; }
+  #admin-shell .employee-form-actions > button { flex: 1 1 120px; }
+  #admin-shell .payroll-metrics { grid-template-columns: 1fr 1fr; gap: 8px; }
+  #admin-shell .payroll-metric { padding: 16px; }
+  #admin-shell .payroll-metric.primary { grid-column: 1 / -1; }
+  #admin-shell .metric-value { font-size: 23px; }
+  #admin-shell .payroll-filters > select { flex-basis: 100%; }
+  #admin-shell .payroll-filters > button { flex: 1 1 auto; }
+  #admin-shell .schedule-day { grid-template-columns: 1fr 1fr; gap: 8px; padding-bottom: 12px; border-bottom: 1px solid #e3eae3; }
+  #admin-shell .schedule-day label { grid-column: 1 / -1; }
+  #admin-shell .cal-day { min-height: 70px; padding: 6px 3px; }
+  #admin-shell .cal-leave-badge { padding: 2px; font-size: 10px; }
+  #admin-shell .status-card { padding: 0 4px; }
+  #admin-shell .admin-dialog { position: fixed; inset: auto 0 0; margin: 0; width: 100%; max-width: 100%; max-height: 90dvh; border-radius: 22px 22px 0 0; padding: 24px 20px max(24px, env(safe-area-inset-bottom)); }
+}

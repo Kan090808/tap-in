@@ -1,4 +1,4 @@
-const CACHE_NAME = "tapin-v15";
+const CACHE_NAME = "tapin-v17";
 const ASSETS = [
   "./",
   "./index.html",
@@ -48,7 +48,7 @@ self.addEventListener("fetch", (event) => {
   }
 
   // Refresh the application shell from the network; retain an offline fallback.
-  if (event.request.mode === "navigate" || url.pathname.endsWith("/app.js")) {
+  if (event.request.mode === "navigate" || url.pathname.endsWith("/app.js") || url.pathname.endsWith(".css")) {
     event.respondWith(
       fetch(event.request, { cache: "no-store" }).then((response) => {
         if (response && response.status === 200 && response.type === "basic") {

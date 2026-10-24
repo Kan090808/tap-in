@@ -160,8 +160,8 @@ function getEmployeeMode() {
 }
 
 function getAdminView() {
-  const view = (new URL(window.location.href).searchParams.get("view") || "config").trim().toLowerCase();
-  return ADMIN_VIEWS.indexOf(view) >= 0 ? view : "config";
+  const view = (new URL(window.location.href).searchParams.get("view") || "leaves").trim().toLowerCase();
+  return ADMIN_VIEWS.indexOf(view) >= 0 ? view : "leaves";
 }
 
 function getOrCreateDeviceUUID() {
@@ -553,7 +553,7 @@ function renderEmployeeShell() {
 }
 
 function renderAdminShell() {
-  const view = ADMIN_VIEWS.indexOf(state.adminView) >= 0 ? state.adminView : "config";
+  const view = ADMIN_VIEWS.indexOf(state.adminView) >= 0 ? state.adminView : "leaves";
   setAdminViewActive(view);
   if (ui.adminEmployeesPanel) {
     ui.adminEmployeesPanel.hidden = view !== "employees";
@@ -679,7 +679,7 @@ async function loadAdminView(view) {
   try {
     await loaders[view]();
     if (state.sessionRole === "admin" && state.adminView === view && getAdminToken() === token) {
-      setAdminStatus("Admin dashboard ready");
+    setAdminStatus("Up to date");
       setAdminResult("", false);
     }
     return true;
@@ -1229,6 +1229,51 @@ function resetEmployeeForm() {
   if (history) history.replaceChildren();
   const correction = document.getElementById("historical-terms-form");
   if (correction) correction.hidden = true;
+  const editor = document.getElementById("employee-editor");
+  if (editor) editor.open = false;
+  document.getElementById("employee-editor-title").textContent="Add employee";
+  const historical = document.getElementById("historical-correction");
+  if (historical) historical.hidden = true;
+}
+
+function openAdminEditor(id) {
+  const editor = document.getElementById(id);
+  if (!editor) return;
+  editor.open = true;
+  if (typeof editor.scrollIntoView === "function") editor.scrollIntoView({ block: "nearest", behavior: "smooth" });
+}
+
+function adminCell(row, label, value, className) {
+  const cell = row.insertCell();
+  cell.dataset.label = label;
+  if (className) cell.className = className;
+  if (value !== undefined) cell.textContent = value == null || value === "" ? "—" : String(value);
+  return cell;
+}
+
+function statusBadge(status) {
+  const labels = { pending: "Pending", approved: "Approved", rejected: "Rejected", cancelled: "Cancelled", revoked: "Revoked", active: "Active", archived: "Archived" };
+  const key = String(status || "").toLowerCase();
+  return '<span class="status-badge status-' + (labels[key] ? key : "unknown") + '">' + escapeHtml(labels[key] || status || "Unknown") + '</span>';
+}
+
+function detailList(entries) {
+  return '<dl class="record-meta">' + entries.map(function (entry) {
+    return '<div><dt>' + escapeHtml(entry[0]) + '</dt><dd>' + escapeHtml(auditValue(entry[1])) + '</dd></div>';
+  }).join("") + '</dl>';
+}
+
+function recordDetails(entries, actions) {
+  return '<details class="record-details"><summary>Details</summary>' + detailList(entries) + (actions ? '<div class="record-actions">'+actions+'</div>' : '') + '</details>';
+}
+
+function adminDate(value, includeTime) {
+  if (!value) return "—";
+  const instant = new Date(/^\d{4}-\d{2}-\d{2}$/.test(value) ? value + "T12:00:00Z" : value);
+  if (isNaN(instant.getTime())) return String(value);
+  const options = { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Taipei" };
+  if (includeTime) Object.assign(options, { hour: "2-digit", minute: "2-digit" });
+  return new Intl.DateTimeFormat("en-GB", options).format(instant);
 }
 
 function localToday() {
@@ -1263,17 +1308,20 @@ function renderEmployees() {
   if (!employees.length) {
     const row = ui.employeesBody.insertRow();
     const cell = row.insertCell();
-    cell.colSpan = 6;
-    cell.textContent = "No employee accounts yet";
+    cell.colSpan = 4;
+    cell.textContent = "No employees yet";
     return;
   }
   employees.forEach(function (employee) {
     const row = ui.employeesBody.insertRow();
-    [employee.name, employee.phone, employee.email, employee.deviceUUID].forEach(function (value) {
-      row.insertCell().textContent = value || "—";
-    });
-    row.insertCell().textContent = employee.status === "archived" ? "Archived · " + [employee.archivedAt, employee.archivedBy].filter(Boolean).join(" · ") : "Active";
-    const actions = row.insertCell();
+    const main = adminCell(row, "Name", undefined, "record-main");
+    main.innerHTML = '<strong class="record-name">' + escapeHtml(employee.name) + '</strong>' + recordDetails([
+      ["Device ID", employee.deviceUUID], ["Employee ID", employee.employeeId],
+      ["Archived", employee.archivedAt ? adminDate(employee.archivedAt, true) : "—"], ["Archived by", employee.archivedBy]
+    ]);
+    adminCell(row, "Contact", [employee.phone, employee.email].filter(Boolean).join(" · "));
+    adminCell(row, "Status").innerHTML = statusBadge(employee.status || "active");
+    const actions = adminCell(row, "Actions", undefined, "record-actions");
     const edit = document.createElement("button");
     edit.type = "button";
     edit.className = "ghost-btn";
@@ -1288,6 +1336,8 @@ function renderEmployees() {
       if (ui.employeeSalaryInput) ui.employeeSalaryInput.value = employee.monthlySalary || "";
       ui.saveEmployeeBtn.textContent = "Save changes";
       ui.cancelEmployeeBtn.hidden = false;
+      openAdminEditor("employee-editor");
+      document.getElementById("employee-editor-title").textContent="Edit employee";
       ui.employeeNameInput.focus();
       document.getElementById("employee-salary-effective").value = "";
       document.getElementById("employee-schedule-effective").value = "";
@@ -1314,7 +1364,7 @@ function renderEmployees() {
       }
     });
     if (employee.status === "archived") {
-      const history = document.createElement("button"); history.className = "ghost-btn"; history.textContent = "Terms history";
+      const history = document.createElement("button"); history.className = "ghost-btn"; history.textContent = "History";
       history.onclick = function () { void loadEmploymentTerms(employee.employeeId); };
       actions.append(history);
     } else actions.append(edit, remove);
@@ -1371,18 +1421,16 @@ function renderLogs(logs) {
     return;
   }
   if (!logs.length) {
-    ui.logsBody.innerHTML = '<tr><td colspan="7">No records yet</td></tr>';
+    ui.logsBody.innerHTML = '<tr><td colspan="4">No attendance yet</td></tr>';
     return;
   }
   ui.logsBody.innerHTML = logs
     .map(function (item) {
       return '<tr>' +
-        "<td>" + escapeHtml(item.timestamp) + "</td>" +
-        "<td>" + escapeHtml(item.employeeName) + "</td>" +
-        "<td>" + escapeHtml(item.deviceUUID) + "</td>" +
-        "<td>" + escapeHtml(item.ipAddress) + "</td>" +
-        "<td>" + escapeHtml(item.locationStatus) + "</td>" +
-        "<td colspan=\"2\">" + mapLink(item.latitude, item.longitude) + "</td>" +
+        '<td class="record-main" data-label="Employee"><strong class="record-name">' + escapeHtml(item.employeeName) + '</strong><span class="record-subtitle">' + escapeHtml(item.punchType === "in" ? "Clock in" : item.punchType === "out" ? "Clock out" : "Punch") + '</span></td>' +
+        '<td data-label="Time">' + escapeHtml(adminDate(item.timestamp, true)) + '</td>' +
+        '<td data-label="Location"><div>' + escapeHtml(item.locationStatus) + '<span class="record-subtitle">' + mapLink(item.latitude, item.longitude) + '</span></div></td>' +
+        '<td data-label="Details">' + recordDetails([["Device ID", item.deviceUUID], ["IP address", item.ipAddress], ["Recorded at", item.timestamp]]) + '</td>' +
       "</tr>";
     })
     .join("");
@@ -1407,39 +1455,23 @@ function renderLeaveTable(leaves) {
     return;
   }
   if (!leaves.length) {
-    ui.leaveBody.innerHTML = '<tr><td colspan="11">No records yet</td></tr>';
+    ui.leaveBody.innerHTML = '<tr><td colspan="4">No requests</td></tr>';
     return;
   }
-  const statusLabels = {
-    pending: "Pending",
-    approved: "Approved",
-    rejected: "Rejected",
-    cancelled: "Cancelled"
-  };
   ui.leaveBody.innerHTML = leaves
     .map(function (item) {
-      const statusLabel = statusLabels[item.status] || escapeHtml(item.status);
       const actionCell =
         (item.status === "pending"
-          ? (['full','am','pm'].includes(item.dayPart) ? '<button class="ghost-btn" data-leave-action="approved" data-request-id="' + escapeHtml(item.requestId) + '">Approve</button>' : '') +
+          ? (['full','am','pm'].includes(item.dayPart) ? '<button class="primary-btn" data-leave-action="approved" data-request-id="' + escapeHtml(item.requestId) + '">Approve</button>' : '') +
             '<button class="ghost-btn" data-leave-action="rejected" data-request-id="' + escapeHtml(item.requestId) + '">Reject</button>'
           : "") +
-        ((item.status === "pending" || item.status === "approved") ? '<button class="ghost-btn" data-leave-action="cancelled" data-request-id="' + escapeHtml(item.requestId) + '">Cancel</button>' : "") +
         (item.leaveType === "sick" ? '<button class="ghost-btn" data-leave-action="proof" data-request-id="' + escapeHtml(item.requestId) + '">Proof</button>' : "");
-      const escapedId = escapeHtml(item.requestId);
-      const shortId = escapedId.length > 8 ? escapedId.slice(0, 8) + "…" : escapedId;
+      const cancelAction=(item.status === "pending" || item.status === "approved") ? '<button class="ghost-btn" data-leave-action="cancelled" data-request-id="'+escapeHtml(item.requestId)+'">Cancel request</button>' : '';
       return '<tr>' +
-        '<td title="' + escapedId + '">' + shortId + "</td>" +
-        "<td>" + escapeHtml(item.employeeName) + "</td>" +
-        "<td>" + escapeHtml(getLeaveTypeLabel(item.leaveType)) + "</td>" +
-        "<td>" + escapeHtml({full:"Full day",am:"Morning",pm:"Afternoon"}[item.dayPart] || "Unknown duration — resolve before approval") + "</td>" +
-        "<td>" + escapeHtml(item.startDate) + "</td>" +
-        "<td>" + escapeHtml(item.endDate) + "</td>" +
-        "<td>" + escapeHtml(item.reason) + "</td>" +
-        "<td>" + statusLabel + "</td>" +
-        "<td>" + (item.status === "cancelled" ? escapeHtml([item.cancelledBy, item.cancelledAt].filter(Boolean).join(" · ")) : "—") + "</td>" +
-        "<td>" + escapeHtml(item.submittedAt) + "</td>" +
-        "<td>" + actionCell + "</td>" +
+        '<td class="record-main" data-label="Employee"><strong class="record-name">' + escapeHtml(item.employeeName) + '</strong><span class="record-subtitle">' + escapeHtml(getLeaveTypeLabel(item.leaveType)) + '</span>' + recordDetails([["Reason", item.reason], ["Submitted", adminDate(item.submittedAt, true)], ["Reviewed by", item.reviewedBy], ["Review note", item.reviewNote], ["Cancelled by", item.cancelledBy], ["Cancelled", adminDate(item.cancelledAt, true)], ["Request ID", item.requestId]],cancelAction) + '</td>' +
+        '<td data-label="Dates"><div>' + escapeHtml(adminDate(item.startDate)) + (item.endDate !== item.startDate ? ' – ' + escapeHtml(adminDate(item.endDate)) : '') + '<span class="record-subtitle">' + escapeHtml({full:"Full day",am:"Morning",pm:"Afternoon"}[item.dayPart] || "Unknown duration — verify before approval") + '</span></div></td>' +
+        '<td data-label="Status">' + statusBadge(item.status) + '</td>' +
+        '<td class="record-actions" data-label="Actions">' + actionCell + '</td>' +
       "</tr>";
     })
     .join("");
@@ -1631,6 +1663,10 @@ function bindAdminViewNavigation() {
 }
 
 function bindEvents() {
+  const adjustmentForm = document.getElementById("payroll-adjustment-form");
+  if (adjustmentForm) adjustmentForm.addEventListener("submit", function (event) { event.preventDefault(); void savePayrollAdjustment(); });
+  const adjustmentCancel = document.getElementById("payroll-adjustment-cancel");
+  if (adjustmentCancel) adjustmentCancel.addEventListener("click", closePayrollAdjustment);
   initializeTermsDates();
   const historicalTerms = document.getElementById("historical-terms-form");
   if (historicalTerms) historicalTerms.addEventListener("submit", function(event) { event.preventDefault(); void saveHistoricalTerms(); });
@@ -1662,7 +1698,7 @@ function bindEvents() {
   });
   const scheduleForm=document.getElementById("schedule-form");
   if(scheduleForm)scheduleForm.addEventListener("submit",async function(event){event.preventDefault();const days=Array.from(document.querySelectorAll("#schedule-days .schedule-day")).filter(function(row){return row.querySelector("[data-weekday]").checked;}).map(function(row){return {weekday:Number(row.querySelector("[data-weekday]").dataset.weekday),start:row.querySelector("[data-start]").value,end:row.querySelector("[data-end]").value};});try{const terms=termsChangeFields(false,true,true);await postToBackend(Object.assign({action:"adminSaveScheduleGroup",token:getAdminToken(),groupId:document.getElementById("schedule-id").value,name:document.getElementById("schedule-name").value.trim(),days:days},terms));scheduleForm.reset();document.getElementById("schedule-id").value="";initializeTermsDates();await loadSchedules();setAdminResult("Schedule group saved",false);}catch(error){setAdminResult(error.message||"Could not save group",true);}});
-  const scheduleCancel=document.getElementById("schedule-cancel");if(scheduleCancel)scheduleCancel.onclick=function(){scheduleForm.reset();document.getElementById("schedule-id").value="";};
+  const scheduleCancel=document.getElementById("schedule-cancel");if(scheduleCancel)scheduleCancel.onclick=function(){scheduleForm.reset();document.getElementById("schedule-id").value="";initializeTermsDates();document.getElementById("schedule-editor").open=false;document.getElementById("schedule-editor-title").textContent="Add schedule";};
   const adminCorrectionForm=document.getElementById("admin-correction-form");
   if(adminCorrectionForm) adminCorrectionForm.addEventListener("submit", async function(event) {
     event.preventDefault();
@@ -1673,6 +1709,7 @@ function bindEvents() {
     try {
       await postToBackend(Object.assign(payload, {submissionId:stableSubmissionId(adminCorrectionForm.dataset, payload)}));
       adminCorrectionForm.reset(); delete adminCorrectionForm.dataset.submissionId; delete adminCorrectionForm.dataset.operation;
+      document.getElementById("correction-editor").open=false;
       await loadAdminCorrections(); setAdminResult("Punch added",false);
     } catch(error) { setAdminResult(error.message || "Could not add punch",true); }
     finally { delete adminCorrectionForm.dataset.busy; }
@@ -1756,7 +1793,7 @@ function bindEvents() {
         }
         state.adminView = getAdminView();
         await enterAdminPortal();
-        setAdminResult("Session expires: " + (data.expiresAt || "Unknown"), false);
+        setAdminResult("", false);
       } catch (error) {
         showPortalLogin("admin", {
           status: "Sign-in failed",
@@ -2075,7 +2112,7 @@ async function loadSchedules() {
     const div = document.createElement("div"); div.className = "schedule-row";
     const label = document.createElement("span"); label.textContent = group.name + " · " + (group.days || []).map(function (day) {return ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"][day.weekday-1] + " " + day.start + "–" + day.end;}).join(", ");
     const edit = document.createElement("button"); edit.className="ghost-btn"; edit.textContent="Edit";
-    edit.onclick = function () { document.getElementById("schedule-id").value=group.groupId; document.getElementById("schedule-name").value=group.name; days.querySelectorAll(".schedule-day").forEach(function (row) {const wd=Number(row.querySelector("[data-weekday]").dataset.weekday); const d=(group.days||[]).find(function(x){return x.weekday===wd;}); row.querySelector("[data-weekday]").checked=!!d; if(d){row.querySelector("[data-start]").value=d.start;row.querySelector("[data-end]").value=d.end;}});};
+    edit.onclick = function () { openAdminEditor("schedule-editor"); document.getElementById("schedule-editor-title").textContent="Edit schedule"; document.getElementById("schedule-id").value=group.groupId; document.getElementById("schedule-name").value=group.name; days.querySelectorAll(".schedule-day").forEach(function (row) {const wd=Number(row.querySelector("[data-weekday]").dataset.weekday); const d=(group.days||[]).find(function(x){return x.weekday===wd;}); row.querySelector("[data-weekday]").checked=!!d; if(d){row.querySelector("[data-start]").value=d.start;row.querySelector("[data-end]").value=d.end;}});};
     const remove=document.createElement("button"); remove.className="ghost-btn"; remove.textContent="Delete";
     remove.onclick=async function(){if(!window.confirm("Delete this schedule group?"))return;try{await postToBackend({action:"adminDeleteScheduleGroup",token:getAdminToken(),groupId:group.groupId});await loadSchedules();}catch(e){setAdminResult(e.message,true);}};
     div.append(label,edit,remove); list.appendChild(div);
@@ -2086,13 +2123,16 @@ async function loadAdminCorrections() {
   const filter = document.getElementById("correction-status-filter");
   const data = await postToBackend({action:"adminGetCorrections",token:getAdminToken(),status:filter ? filter.value || "pending" : "pending"});
   const wrap=document.getElementById("correction-review"); if(!wrap)return; wrap.replaceChildren();
-  const table=document.createElement("table"); table.innerHTML="<thead><tr><th>Employee</th><th>Date</th><th>Time</th><th>Direction</th><th>Reason</th><th>Status</th><th>Origin / source</th><th>Submitted</th><th>Reviewed</th><th>Revocation</th><th>Action</th></tr></thead>"; const body=table.createTBody();
+  const table=document.createElement("table"); table.innerHTML="<thead><tr><th>Employee</th><th>Punch</th><th>Status</th><th>Actions</th></tr></thead>"; const body=table.createTBody();
+  if (!(data.corrections || []).length) { const empty = body.insertRow().insertCell(); empty.colSpan = 4; empty.textContent = "No requests"; }
   (data.corrections||[]).forEach(function(c) {
     const row = body.insertRow();
-    [c.employeeName,c.date,c.time,c.punchType,c.reason,c.status,[c.origin,c.requestId,c.replacesRequestId ? "Replaces " + c.replacesRequestId : ""].filter(Boolean).join(" · "),[c.submittedBy,c.submittedAt].filter(Boolean).join(" · "),[c.reviewedBy,c.reviewedAt,c.reviewNote].filter(Boolean).join(" · "),[c.revokedBy,c.revokedAt,c.revocationReason || c.revokeReason].filter(Boolean).join(" · ")].forEach(function(v) { row.insertCell().textContent=v||"—"; });
-    const cell=row.insertCell();
+    adminCell(row,"Employee",undefined,"record-main").innerHTML='<strong class="record-name">'+escapeHtml(c.employeeName)+'</strong>'+recordDetails([["Reason",c.reason],["Source",c.origin],["Submitted",adminDate(c.submittedAt,true)],["Reviewed by",c.reviewedBy],["Reviewed",adminDate(c.reviewedAt,true)],["Review note",c.reviewNote],["Revoked by",c.revokedBy],["Revoked",adminDate(c.revokedAt,true)],["Revocation reason",c.revocationReason || c.revokeReason],["Request ID",c.requestId],["Replaces",c.replacesRequestId]]);
+    adminCell(row,"Punch").innerHTML='<div>'+escapeHtml(adminDate(c.date))+' · '+escapeHtml(c.time || "—")+'<span class="record-subtitle">'+escapeHtml(c.punchType === "out" ? "Clock out" : "Clock in")+'</span></div>';
+    adminCell(row,"Status").innerHTML=statusBadge(c.status);
+    const cell=adminCell(row,"Actions",undefined,"record-actions");
     if(c.status==="pending") ["approved","rejected"].forEach(function(status) {
-      const btn=document.createElement("button");btn.className="ghost-btn";btn.textContent=status==="approved"?"Approve":"Reject";
+      const btn=document.createElement("button");btn.className=status==="approved"?"primary-btn":"ghost-btn";btn.textContent=status==="approved"?"Approve":"Reject";
       btn.onclick=async function() {btn.disabled=true;try{await postToBackend({action:"adminUpdateCorrection",token:getAdminToken(),requestId:c.requestId,status:status,reviewNote:""});await loadAdminCorrections();}catch(e){setAdminResult(e.message,true);}finally{btn.disabled=false;}}; cell.appendChild(btn);
     });
     if(c.status==="approved") {
@@ -2109,6 +2149,7 @@ async function loadAdminCorrections() {
     if(c.status==="revoked") {
       const replace=document.createElement("button");replace.className="ghost-btn";replace.textContent="Replace";
       replace.onclick=function() {
+        openAdminEditor("correction-editor");
         document.getElementById("admin-correction-employee").value=c.employeeId;
         document.getElementById("admin-correction-time").value=c.date+"T"+c.time;
         document.getElementById("admin-correction-direction").value=c.punchType;
@@ -2140,16 +2181,16 @@ function auditValue(value) {
 }
 
 function auditTable(headings, rows) {
-  return '<table><thead><tr>'+headings.map(function(h){return '<th>'+escapeHtml(h)+'</th>';}).join("")+'</tr></thead><tbody>'+rows.map(function(row){return '<tr>'+row.map(function(v){return '<td>'+escapeHtml(auditValue(v))+'</td>';}).join("")+'</tr>';}).join("")+'</tbody></table>';
+  return '<table><thead><tr>'+headings.map(function(h){return '<th>'+escapeHtml(h)+'</th>';}).join("")+'</tr></thead><tbody>'+rows.map(function(row){return '<tr>'+row.map(function(v,index){return '<td data-label="'+escapeHtml(headings[index])+'">'+escapeHtml(auditValue(v))+'</td>';}).join("")+'</tr>';}).join("")+'</tbody></table>';
 }
 
 function termsHistoryHtml(terms) {
   const versions = terms.versions || [].concat(terms.salaries || [],terms.assignments || [],terms.scheduleVersions || []);
   const unique = new Map();
   [terms.salaryVersion].concat(versions).filter(Boolean).forEach(function(version) { unique.set(version.versionId || JSON.stringify(version),version); });
-  return '<h3>Salary and schedule history</h3>' + auditTable(["Version","Effective date","Salary / schedule","Reason","Administrator","Recorded at","Provenance"], Array.from(unique.values()).map(function(v) {
+  return '<details class="admin-editor"><summary>Salary & schedule history</summary>' + auditTable(["Version","Effective date","Salary / schedule","Reason","Administrator","Recorded at","Provenance"], Array.from(unique.values()).map(function(v) {
     return [v.versionId,v.effectiveDate || v.effectiveMonth,v.amount != null ? "MYR "+v.amount : [v.scheduleVersionId,v.groupId,v.days ? auditValue(v.days) : ""].filter(Boolean).join(" · "),v.reason,v.actor,v.createdAt,v.provenance];
-  }));
+  })) + '</details>';
 }
 
 function warningsHtml(warnings) {
@@ -2164,10 +2205,12 @@ async function loadEmploymentTerms(employeeId) {
     const data=await postToBackend({action:"adminGetEmploymentTerms",token:getAdminToken(),employeeId:employeeId});
     if (wrap.dataset.employeeId !== employeeId) return;
     const terms=data.terms || data;
-    wrap.innerHTML='<p>Employee: '+escapeHtml(employeeId)+'</p>'+warningsHtml(terms.warnings || [])+termsHistoryHtml(terms);
+    wrap.innerHTML=warningsHtml(terms.warnings || [])+termsHistoryHtml(terms);
     const form=document.getElementById("historical-terms-form");
     form.reset(); form.hidden=false;form.dataset.employeeId=employeeId;
-    document.getElementById("historical-terms-employee").textContent=employeeId;
+    const advanced=document.getElementById("historical-correction");if(advanced){advanced.hidden=false;advanced.open=false;}
+    const employee=employees.find(function(item){return item.employeeId===employeeId;});
+    document.getElementById("historical-terms-employee").textContent=employee ? employee.name : "Past terms";
     document.getElementById("historical-terms-schedule").innerHTML='<option value="">Keep schedule unchanged</option>'+scheduleGroups.map(function(g){return '<option value="'+escapeHtml(g.groupId)+'">'+escapeHtml(g.name)+'</option>';}).join("");
   } catch(error) {if (wrap.dataset.employeeId === employeeId) wrap.textContent=error.message || "Could not load terms history";}
 }
@@ -2201,11 +2244,43 @@ function renderPayrollAudit(report) {
   const wrap=document.getElementById("payroll-audit");if (!wrap) return;
   const terms=report.terms || {};
   const adjustments=(report.adjustments || []).slice().sort(function(a,b) {return String(a.createdAt).localeCompare(String(b.createdAt));});
-  wrap.innerHTML=warningsHtml([].concat(report.warnings || [],terms.warnings || []))+termsHistoryHtml(terms)+'<h3>Adjustment history</h3><p>Pay adjustments are additive. Later daily overrides take precedence.</p>'+auditTable(["Adjustment ID","Period","Changed values","Reason","Administrator","Recorded at"],adjustments.map(function(a) {
+  wrap.innerHTML=warningsHtml([].concat(report.warnings || [],terms.warnings || []))+termsHistoryHtml(terms)+'<details class="admin-editor"><summary>Adjustment history'+(adjustments.length?' · '+adjustments.length:'')+'</summary>'+auditTable(["Adjustment ID","Period","Changed values","Reason","Administrator","Recorded at"],adjustments.map(function(a) {
     const labels={workHours:"Worked hours",absenceDays:"Absence days",payAmount:"Pay adjustment (MYR)"};
     const values=Object.keys(labels).filter(function(key){return a[key] !== undefined && a[key] !== null && a[key] !== "";}).map(function(key){return labels[key]+": "+a[key];}).join(" · ");
     return [a.adjustmentId,a.date || "Whole month",values,a.reason,a.admin || a.actor || a.createdBy,a.createdAt];
-  }));
+  }))+'</details>';
+}
+
+function closePayrollAdjustment() {
+  const dialog=document.getElementById("payroll-adjustment-dialog");
+  if(typeof dialog.close==="function")dialog.close();else dialog.open=false;
+}
+
+function openPayrollAdjustment(day,employeeId,year,month) {
+  const dialog=document.getElementById("payroll-adjustment-dialog");
+  Object.assign(dialog.dataset,{employeeId:employeeId,year:String(year),month:String(month),date:day.date});
+  ["hours","absence","pay","reason"].forEach(function(field){document.getElementById("payroll-adjustment-"+field).value="";});
+  document.getElementById("payroll-adjustment-hours").placeholder="Current: "+String(day.workedHours ?? "—");
+  document.getElementById("payroll-adjustment-date").textContent=adminDate(day.date);
+  document.getElementById("payroll-adjustment-error").textContent="";
+  if(typeof dialog.showModal==="function")dialog.showModal();else dialog.open=true;
+}
+
+async function savePayrollAdjustment() {
+  const dialog=document.getElementById("payroll-adjustment-dialog");
+  const save=document.getElementById("payroll-adjustment-save");
+  if(save.disabled)return;
+  const reason=document.getElementById("payroll-adjustment-reason").value.trim();
+  const values={workHours:document.getElementById("payroll-adjustment-hours").value,absenceDays:document.getElementById("payroll-adjustment-absence").value,payAmount:document.getElementById("payroll-adjustment-pay").value};
+  const error=document.getElementById("payroll-adjustment-error");
+  if(!reason){error.textContent="Add a reason";return;}
+  if(Object.values(values).every(function(value){return value==="";})){error.textContent="Enter an adjustment";return;}
+  const payload={action:"adminSaveMonthlyAdjustment",token:getAdminToken(),employeeId:dialog.dataset.employeeId,year:Number(dialog.dataset.year),month:Number(dialog.dataset.month),date:dialog.dataset.date,reason:reason};
+  Object.keys(values).forEach(function(key){if(values[key]!=="")payload[key]=Number(values[key]);});
+  save.disabled=true;error.textContent="";
+  try{await postToBackend(payload);closePayrollAdjustment();await loadPayroll();setAdminResult("Adjustment saved",false);}
+  catch(failure){error.textContent=failure.message || "Could not save adjustment";}
+  finally{save.disabled=false;}
 }
 
 async function loadPayroll() {
@@ -2213,7 +2288,7 @@ async function loadPayroll() {
   const select=document.getElementById("payroll-employee");
   const current=select.value; select.innerHTML=employeeOptions(employeeData.employees || []);select.value=current;
   const month=document.getElementById("payroll-month");if(!month.value)month.value=new Date().toISOString().slice(0,7);
-  if(!select.value){document.getElementById("payroll-summary").textContent="Select an employee to load monthly records, including archived employees.";document.getElementById("payroll-records").replaceChildren();document.getElementById("payroll-audit").replaceChildren();return;}
+  if(!select.value){document.getElementById("payroll-summary").textContent="Select an employee";document.getElementById("payroll-records").replaceChildren();document.getElementById("payroll-audit").replaceChildren();return;}
   const parts=month.value.split("-").map(Number);
   document.getElementById("payroll-summary").textContent="Loading monthly records...";
   document.getElementById("payroll-records").replaceChildren();document.getElementById("payroll-audit").replaceChildren();
@@ -2222,25 +2297,25 @@ async function loadPayroll() {
     throw error;
   });
   renderPayrollAudit(data.report || {});
-  const report=data.report||{};const summary=report.summary||{};document.getElementById("payroll-summary").textContent=["Base salary: MYR "+Number(summary.baseSalary||0).toFixed(2),"Worked: "+Number(summary.workedHours||0).toFixed(2)+" h","Leave: "+Number(summary.leaveHours||0).toFixed(2)+" h","Credited: "+Number(summary.creditedHours||0).toFixed(2)+" h","Overtime: "+Number(summary.overtimeHours||0).toFixed(2)+" h / MYR "+Number(summary.overtimePay||0).toFixed(2),"Absence: "+Number(summary.absenceDays||0).toFixed(2)+" days / deduction MYR "+Number(summary.absenceDeduction||0).toFixed(2),"Adjustments: MYR "+Number(summary.payAdjustment||0).toFixed(2),"Net pay: MYR "+Number(summary.netPay||0).toFixed(2)].join("\n");
+  const report=data.report||{};const summary=report.summary||{};
+  const money=function(value){return "MYR "+Number(value||0).toLocaleString("en-MY",{minimumFractionDigits:2,maximumFractionDigits:2});};
+  const hours=function(value){return Number(value||0).toFixed(1)+" h";};
+  document.getElementById("payroll-summary").innerHTML='<div class="payroll-metrics">'+[
+    ["Net pay",money(summary.netPay),true],["Worked",hours(summary.workedHours)],["Overtime",hours(summary.overtimeHours)]
+  ].map(function(metric){return '<div class="payroll-metric'+(metric[2]?' primary':'')+'"><span class="metric-label">'+escapeHtml(metric[0])+'</span><strong class="metric-value">'+escapeHtml(metric[1])+'</strong></div>';}).join("")+'</div><details class="record-details"><summary>Pay breakdown</summary>'+detailList([["Base salary",money(summary.baseSalary)],["Leave",hours(summary.leaveHours)],["Attendance credit",hours(summary.creditedHours)],["Overtime pay",money(summary.overtimePay)],["Absence",Number(summary.absenceDays||0)+" days"],["Deductions",money(summary.absenceDeduction)],["Adjustments",money(summary.payAdjustment)]])+'</details>';
   const wrap=document.getElementById("payroll-records");wrap.replaceChildren();
-  const table=document.createElement("table");table.innerHTML="<thead><tr><th>Date</th><th>Worked hours</th><th>Leave hours</th><th>Paid leave hours</th><th>Unpaid leave hours</th><th>Overtime hours</th><th>Absence days</th><th>Overtime pay (MYR)</th><th>Absence deduction (MYR)</th><th>Pay adjustment (MYR)</th><th>Action</th></tr></thead>";
+  const table=document.createElement("table");table.innerHTML="<thead><tr><th>Date</th><th>Hours</th><th>Leave</th><th>Actions</th></tr></thead>";
   const body=table.createTBody();
   (report.days||[]).forEach(function(day) {
     const row=body.insertRow();
-    [day.date,day.workedHours,day.leaveHours,day.paidLeaveHours,day.unpaidLeaveHours,day.overtimeHours,day.absenceDays,day.overtimePay,day.absenceDeduction,day.payAdjustment].forEach(function(v){row.insertCell().textContent=v==null?"":String(v);});
+    adminCell(row,"Date",undefined,"record-main").innerHTML='<strong class="record-name">'+escapeHtml(adminDate(day.date))+'</strong>'+recordDetails([["Overtime",hours(day.overtimeHours)],["Absence",Number(day.absenceDays||0)+" days"],["Overtime pay",money(day.overtimePay)],["Deduction",money(day.absenceDeduction)],["Pay adjustment",money(day.payAdjustment)],["Paid leave",hours(day.paidLeaveHours)],["Unpaid leave",hours(day.unpaidLeaveHours)],["Review",(day.warnings||[]).join(" · ")]]);
+    adminCell(row,"Hours",hours(day.workedHours));
+    adminCell(row,"Leave",hours(day.leaveHours));
     const btn=document.createElement("button");btn.className="ghost-btn";btn.textContent="Adjust";
-    btn.onclick=async function() {
-      const reason=window.prompt("Reason for adjustment");if(!reason)return;
-      const workHours=window.prompt("Worked hours (current: "+String(day.workedHours??"—")+"). Leave blank to keep.","");if(workHours===null)return;
-      const absenceDays=window.prompt("Absence days (current: "+String(day.absenceDays??"—")+"). Leave blank to keep.","");if(absenceDays===null)return;
-      const payAmount=window.prompt("Pay adjustment in MYR (+/-). Current: "+String(day.payAdjustment??0)+". Leave blank to keep.","");if(payAmount===null)return;
-      if(workHours===""&&absenceDays===""&&payAmount==="")return;
-      const payload={action:"adminSaveMonthlyAdjustment",token:getAdminToken(),employeeId:select.value,year:parts[0],month:parts[1],date:day.date,reason:reason};
-      if(workHours!=="")payload.workHours=Number(workHours);
-      if(absenceDays!=="")payload.absenceDays=Number(absenceDays);
-      if(payAmount!=="")payload.payAmount=Number(payAmount);
-      try{await postToBackend(payload);await loadPayroll();}catch(e){setAdminResult(e.message,true);}
-    };row.insertCell().appendChild(btn);
-  });wrap.appendChild(table);
+    btn.onclick=function(){openPayrollAdjustment(day,select.value,parts[0],parts[1]);};
+    adminCell(row,"Actions",undefined,"record-actions").appendChild(btn);
+  });
+  const daily=document.createElement("details");daily.className="admin-editor";
+  const caption=document.createElement("summary");caption.textContent="Daily records · "+(report.days||[]).length;
+  daily.append(caption,table);wrap.appendChild(daily);
 }
