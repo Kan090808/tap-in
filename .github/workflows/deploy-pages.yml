@@ -6,6 +6,12 @@ on:
       - main
     paths:
       - "web/**"
+      - "gas/**"
+      - "scripts/build-demo.cjs"
+      - "scripts/demo-*.js"
+      - "scripts/demo-*.cjs"
+      - "package.json"
+      - "package-lock.json"
       - ".github/workflows/deploy-pages.yml"
   workflow_dispatch:
 
@@ -27,6 +33,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Build browser demo
+        run: npm ci && npm run build:demo
 
       - name: Setup Pages
         uses: actions/configure-pages@v5

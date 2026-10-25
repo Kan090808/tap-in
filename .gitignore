@@ -2,3 +2,4 @@
 .opencode/*
 openspec/*
 .local/
+node_modules/

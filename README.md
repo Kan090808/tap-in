@@ -1,6 +1,6 @@
 # TapIn
 
-TapIn 是一個以「一鍵打卡、零摩擦」為目標的 PWA。前端部署於 GitHub Pages / Vercel，後端使用 Google Apps Script，資料記錄於 Google Sheets。
+TapIn 現在預設為顧客展示用的純前端 PWA。所有員工、打卡、請假、證明、班表、補簽、薪資與管理員工作階段資料都存在目前瀏覽器的 `localStorage`，不需要 GAS、Cloud Run、Firestore 或 Google 登入。業務規則仍由同一份 `gas/*.gs` 打包執行。
 
 ## 功能摘要
 - 一鍵打卡（以 Device UUID 自動識別）
@@ -20,16 +20,25 @@ TapIn 是一個以「一鍵打卡、零摩擦」為目標的 PWA。前端部署�
 - `web/`：PWA 前端與管理後台
 - `gas/`：Google Apps Script 後端
 
-## 初始化步驟
-1. 編輯 `web/config.js`：設定 `GAS_WEB_APP_URL`。
-2. 在 Google Apps Script 建立專案，加入 `gas/Code.gs`、`gas/Identity.gs`、`gas/Integrity.gs`、`gas/Terms.gs` 與 `gas/appsscript.json`；四份 `.gs` 必須部署在同一專案。
-3. 設定 `DEFAULT_CONFIG.SPREADSHEET_ID`，或於 Script Properties 設定 `TAPIN_SPREADSHEET_ID`。
-4. 在 GAS 編輯器執行一次 `setAdminCredential("admin", "你的密碼")` 建立管理者帳號。
-5. 部署 GAS 為 Web App（執行身分：你自己；存取權：任何人）。
-6. 部署 `web/` 到 GitHub Pages 或 Vercel（HTTPS）。
-7. 在管理後台「員工帳號」新增員工姓名、電話、Email 與員工提供的 Device ID。系統會建立 `Employees` 與 `DeviceBindings` 工作表；既有員工名單也會保留。
-8. 部署新版 GAS 時，授權 Google Drive 存取；病假證明會保存在部署者的 Drive，僅由已登入的管理員透過後端讀取。
-9. 在員工帳號設定班表群組與月薪（MYR）。首次開啟班表管理頁會建立週一至六、週一至五兩個預設群組。
+## 啟動顧客展示版
+
+```sh
+npm ci
+npm run build:demo
+python3 -m http.server 8080 --directory web
+```
+
+開啟 <http://localhost:8080/>。管理員：`admin`／`demo-password`；目前裝置已綁定示範員工 Alex Morgan，可直接上下班打卡或以員工角色登入。另有 Jamie Chen、Taylor Singh，以及本月打卡、待審請假／補簽、證明與薪資調整資料。
+
+- 打卡、員工管理／封存、裝置綁定、班表／薪資生效日、請假證明與審核、補簽／撤銷、月曆、薪資調整與 CSV 匯出沿用現有業務規則。
+- Demo 使用模擬 Office IP、GPS 與可推進的時鐘，不要求定位或通知權限，也不查詢外部 API。同分鐘連續上下班會將 Demo 時鐘推進，避免時間衝突。
+- 按 **Reset demo data** 並確認即可還原示範資料、清除登入工作階段；保留 Device ID 與非 TapIn 儲存資料。
+- 證明每檔最多 512 KiB，全部證明合計最多 1.5 MiB。瀏覽器空間不足時會拒絕儲存，不將未保存操作顯示為成功。
+- 重新整理或重開瀏覽器會保留資料；不同瀏覽器、裝置、網域或連接埠不共用資料。清除網站儲存資料後會失去修改。
+- 首次載入仍須能取得網站檔案；Service Worker 安裝完成後可離線使用。請用 localhost 或 HTTPS，不要直接以 `file://` 開啟。
+- 這是展示環境，不是安全的正式人資系統。不要輸入真實個資、醫療證明或正式密碼。
+
+`web/demo-runtime.js` 由 `scripts/demo-runtime.js` 和 `gas/*.gs` 建置；修改規則後須重新執行 `npm run build:demo`。GitHub Pages 工作流程會先安裝依賴與建置，再發布靜態 `web/`。詳細展示步驟與既有 Node 測試模式見 [`docs/local-testing.md`](docs/local-testing.md)。
 
 ## GitHub Pages 部署（公開）
 1. 建立新的公開 GitHub repo（建議名稱：`tap-in`）。
@@ -38,12 +47,9 @@ TapIn 是一個以「一鍵打卡、零摩擦」為目標的 PWA。前端部署�
 4. 本專案已提供 `.github/workflows/deploy-pages.yml`，會自動部署 `web/` 目錄。
 5. 部署完成後，站點網址為 `https://<你的帳號>.github.io/<repo>/`。
 
-## 正式上線建議流程
-1. 建立正式 Google Sheet（不要用測試資料表），並把 `Spreadsheet ID` 設到 GAS 設定。
-2. GAS 發佈使用固定版本（不要用開發版 URL），取得正式 `.../exec` 網址後更新 `web/config.js`。
-3. 前端部署到 HTTPS 網域（GitHub Pages 或 Vercel），建議使用獨立正式網域。
-4. 以手機實機驗證：定位權限、IP 判定、打卡寫入、管理後台登入。
-5. 發佈後保留一份 rollback 版本（上一版 GAS 與前端）。
+## 正式系統注意事項
+
+目前 `web/config.js` 啟用 `DEMO_MODE`，不連正式資料。既有 GAS、Node 本機後端與 Cloud Run 程式保留作開發／正式系統用途，但不是展示版的執行依賴；請勿把 Demo 帳密或 localStorage 當作正式系統的驗證與備份方案。正式 Google 服務部署、資料搬移與切換不屬於此次展示版。
 
 ## 加入桌面（A2HS）
 - Desktop (Chrome / Edge)：可點擊「新增至桌面」按鈕觸發安裝。
@@ -65,58 +71,11 @@ TapIn 是一個以「一鍵打卡、零摩擦」為目標的 PWA。前端部署�
   - 最近 N 筆打卡紀錄
   - 員工每月出勤、工時、請假、缺席、加班與薪資試算；可匯出 CSV
 
-## 本機測試（Local Hosting）
+## 本機與手機展示
 
-若要測試完整的管理、請假、補簽與薪資流程，執行 `node scripts/local-server.cjs`，開啟 `http://localhost:8080/`，使用 `admin` / `test-password` 登入。本機模式執行同一份 GAS 業務邏輯，以本機檔案模擬 Sheets／Drive，不連正式後端；詳細限制與重設方式見 [`docs/local-testing.md`](docs/local-testing.md)。下列靜態網站伺服器方法只提供前端，仍會連線至 `web/config.js` 設定的 GAS。
+顧客展示請使用上面的靜態網站啟動方式，而不是 `scripts/local-server.cjs`。固定使用同一個網址及連接埠，才能讀到相同的瀏覽器資料。手機展示建議使用 GitHub Pages 的 HTTPS 網址；手機會有自己獨立的示範資料。
 
-PWA 需在 HTTPS 或 `localhost` 上才能使用 Service Worker 與定位功能，直接用 `file://` 開啟會受限。推薦以下方式：
-
-### 方法一：Node.js `serve`（推薦）
-
-```bash
-npx serve web
-```
-
-瀏覽器開啟 `http://localhost:3000`。
-
-### 方法二：Python 內建 HTTP Server
-
-```bash
-# Python 3
-cd web && python3 -m http.server 8080
-```
-
-瀏覽器開啟 `http://localhost:8080`。
-
-### 方法三：VS Code Live Server 擴充套件
-
-1. 安裝擴充套件 **Live Server**（ritwickdey.LiveServer）。
-2. 在 `web/index.html` 上右鍵 → **Open with Live Server**。
-3. 瀏覽器自動開啟 `http://127.0.0.1:5500`。
-
-### 手機測試（同一 Wi-Fi）
-
-先用上述任一方法啟動本機伺服器，再用電腦的區網 IP 讓手機連入：
-
-```bash
-# 查詢本機 IP（macOS）
-ipconfig getifaddr en0
-```
-
-手機 Chrome 開啟對應網址（需與電腦在同一 Wi-Fi）：
-
-| 方法 | 網址 |
-|------|------|
-| `npx serve web` | `http://<電腦IP>:3000` |
-| `python3 -m http.server 8080` | `http://<電腦IP>:8080` |
-| VS Code Live Server | `http://<電腦IP>:5500` |
-
-三種方法預設都監聽 `0.0.0.0`，同 Wi-Fi 其他裝置皆可連入。
-
-> **注意**：GPS 定位在非 HTTPS 頁面（除 localhost 外）無法使用。若要測試完整 GPS 流程，請改用 GitHub Pages / Vercel 的 HTTPS 網址，或使用 `ngrok` 建立 HTTPS Tunnel：
-> ```bash
-> ngrok http 3000
-> ```
+既有 `node scripts/local-server.cjs` 是開發用的 Node API 模式，使用 `admin`／`test-password` 與 `.local/tapin.json`，**不是 localStorage 展示版**。其使用方式保留於 [`docs/local-testing.md`](docs/local-testing.md)。
 
 ## 測試入口
 - 打卡頁：`/index.html`

@@ -1,4 +1,29 @@
-# 本機測試
+# 本機展示與開發測試
+
+## 顧客展示：純瀏覽器 localStorage
+
+```sh
+npm ci
+npm run build:demo
+python3 -m http.server 8080 --directory web
+```
+
+開啟 <http://localhost:8080/>，管理員使用 `admin`／`demo-password`。裝置已綁定 Alex Morgan；另有兩位示範員工、本月出勤、待審請假／補簽、PDF 證明與薪資調整。
+
+建議展示順序：
+1. 首頁直接按 **Clock in**、**Clock out**；再用 **Sign in with this device** 查看員工月曆。
+2. 提交請假或補簽。病假可附 PNG、JPEG、WebP 或 PDF，單檔最多 512 KiB，全部證明最多 1.5 MiB。
+3. 登出後切到 **Admin**，審核請假／補簽、下載病假證明。
+4. **People** 編輯／新增員工或封存；**Schedules** 查看班表；薪資與班表異動須填理由與生效日期。
+5. **Payroll** 選擇員工及本月，載入薪資、查看調整歷史、加入調整並匯出 CSV。
+6. 重新整理，確認資料保留；網站完成離線快取後也可離線重開。
+7. **Reset demo data** 經確認後還原示範資料並清除登入狀態，保留 Device ID 與其他網站儲存鍵。
+
+展示版不連 API、GAS 或 Google Cloud。IP／GPS 是模擬值，不要求定位／通知權限；時鐘從裝置時間開始，必要時推進一分鐘，讓連續打卡可立即展示。所有業務資料與證明保存在 `tapin_demo_state_v1`；各瀏覽器、裝置、網域與連接埠獨立，清除網站資料會遺失修改。容量不足或儲存不可用會明確拒絕操作。不要放入真實個資或正式密碼。
+
+需使用 localhost 或 HTTPS；不要直接打開 `file://`。手機建議開啟 GitHub Pages HTTPS 網址。修改 `gas/*.gs` 或 `scripts/demo-runtime.js` 後須重新執行 `npm run build:demo`；部署流程會自動建置。完整測試：`npm test`。
+
+## 既有 Node API 開發模式（非展示版）
 
 在專案目錄啟動：
 

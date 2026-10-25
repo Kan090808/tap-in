@@ -36,6 +36,41 @@ body {
   max-width: 1080px;
 }
 
+.demo-banner {
+  margin-bottom: 16px;
+  padding: 16px 18px;
+  border: 2px solid #c68725;
+  border-radius: var(--radius);
+  background: #fff7e6;
+  color: #5b3b10;
+  overflow-wrap: anywhere;
+}
+
+.demo-banner h2 {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+
+.demo-banner p {
+  margin: 8px 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.demo-banner code {
+  font-weight: 700;
+  user-select: all;
+}
+
+.demo-banner .ghost-btn {
+  border-color: #c68725;
+  color: #5b3b10;
+}
+
+.demo-banner .result:empty {
+  display: none;
+}
+
 .topbar {
   display: flex;
   align-items: center;

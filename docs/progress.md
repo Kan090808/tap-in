@@ -1,5 +1,11 @@
 # TapIn Development Progress
 
+## Browser-only customer demo
+- 預設網站已改為 localStorage Demo，無須 Google Cloud／GAS 部署；重用完整 `gas/*.gs` 業務規則並建置成瀏覽器程式。
+- 預載三位員工、本月出勤、請假／補簽、PDF 證明與薪資調整；提供確認後重設、模擬定位／IP 與可推進的展示時鐘。
+- 已通過完整 81 項測試；實際瀏覽器驗證打卡、登入還原、審核、薪資報表、CSV／證明下載、離線重開與手機版面。展示模式不代表正式系統已部署。
+- 使用方式與資料限制見 `docs/local-testing.md`；管理員 `admin`／`demo-password`，不得存放真實個資。
+
 ## Milestones
 - [x] 建立專案文件與目錄結構
 - [x] 完成 PWA 前端（一鍵打卡、UUID、IP、GPS、安裝流程）

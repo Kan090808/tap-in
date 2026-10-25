@@ -1,10 +1,12 @@
 const BASE_CONFIG = window.TAPIN_CONFIG || {};
 
 const CONFIG = {
+  DEMO_MODE: BASE_CONFIG.DEMO_MODE === true,
   GAS_WEB_APP_URL: BASE_CONFIG.GAS_WEB_APP_URL || "",
   DEFAULT_OFFICE_STATIC_IP: BASE_CONFIG.DEFAULT_OFFICE_STATIC_IP || "203.0.113.10",
   MAX_GPS_ACCURACY_METERS: Number(BASE_CONFIG.MAX_GPS_ACCURACY_METERS || 120),
   REQUEST_TIMEOUT_MS: 15000,
+  DEMO_MAX_PROOF_BYTES: 512 * 1024,
   STORAGE_KEYS: {
     deviceUUID: "tapin_device_uuid",
     adminToken: "tapin_admin_token",
@@ -309,6 +311,12 @@ function setAdminLoginBusy(isBusy) {
 }
 
 function ensureBackendConfigured() {
+  if (CONFIG.DEMO_MODE) {
+    if (!window.TAPIN_DEMO || typeof window.TAPIN_DEMO.request !== "function") {
+      throw new Error("Demo runtime could not load. Reload this page to try again.");
+    }
+    return;
+  }
   if (!CONFIG.GAS_WEB_APP_URL) {
     throw new Error("Set GAS_WEB_APP_URL in web/config.js first");
   }
@@ -321,6 +329,7 @@ async function postToBackend(payload) {
     error.preSubmission = true;
     throw error;
   }
+  if (CONFIG.DEMO_MODE) return requestDemo(payload);
   const response = await fetch(CONFIG.GAS_WEB_APP_URL, {
     method: "POST",
     headers: {
@@ -345,6 +354,7 @@ async function postToBackend(payload) {
 
 async function getFromBackend(action) {
   ensureBackendConfigured();
+  if (CONFIG.DEMO_MODE) return requestDemo({ action: action });
   const url = new URL(CONFIG.GAS_WEB_APP_URL);
   url.searchParams.set("action", action);
   const response = await fetch(url.toString(), { cache: "no-store" });
@@ -361,8 +371,18 @@ async function getFromBackend(action) {
   return data;
 }
 
+async function requestDemo(payload) {
+  const data = await window.TAPIN_DEMO.request(payload);
+  if (!data || !data.ok) {
+    const error = new Error((data && data.message) || "Demo request failed");
+    error.backendRejected = !!data && data.ok === false;
+    throw error;
+  }
+  return data;
+}
+
 async function fetchPublicConfig() {
-  if (!CONFIG.GAS_WEB_APP_URL) {
+  if (!CONFIG.DEMO_MODE && !CONFIG.GAS_WEB_APP_URL) {
     return;
   }
   const data = await getFromBackend("publicConfig");
@@ -797,6 +817,7 @@ function initInstallEntry() {
 }
 
 async function getPublicIP() {
+  if (CONFIG.DEMO_MODE) return state.officeStaticIp;
   const endpoints = ["https://api.ipify.org?format=json", "https://api64.ipify.org?format=json"];
   for (const endpoint of endpoints) {
     const controller = new AbortController();
@@ -819,6 +840,11 @@ async function getPublicIP() {
 }
 
 function getCurrentPosition() {
+  if (CONFIG.DEMO_MODE) {
+    return Promise.resolve({
+      coords: { latitude: 3.139, longitude: 101.6869, accuracy: Math.min(5, state.maxGpsAccuracyMeters) }
+    });
+  }
   return new Promise(function (resolve, reject) {
     if (!navigator.geolocation) {
       reject(new Error("This browser does not support location"));
@@ -866,13 +892,13 @@ function resolvePunchMessage(result) {
       ? result.employeeName + (result.punchType === "out" ? " clock-out successful" : " clock-in successful")
       : (result.punchType === "out" ? "Clock-out successful" : "Clock-in successful");
   if (result.serverTime) {
-    return baseMessage + " (server time: " + formatNetworkTime(result.serverTime) + ")";
+    return baseMessage + (CONFIG.DEMO_MODE ? " (demo time: " : " (server time: ") + formatNetworkTime(result.serverTime) + ")";
   }
   return baseMessage;
 }
 
 async function maybeNotifyArrival(locationStatus) {
-  if (!("Notification" in window) || locationStatus !== "Office") {
+  if (CONFIG.DEMO_MODE || !("Notification" in window) || locationStatus !== "Office") {
     return;
   }
   if (Notification.permission === "default") {
@@ -955,12 +981,14 @@ async function handlePunch(punchType, quick) {
 
   try {
     const deviceUUID = getOrCreateDeviceUUID();
-    if (window.location.protocol !== "https:" && window.location.hostname !== "localhost") {
+    if (!CONFIG.DEMO_MODE && window.location.protocol !== "https:" && window.location.hostname !== "localhost") {
       throw new Error("Use HTTPS to clock in securely");
     }
 
-    if (quick) ui.quickStatus.textContent = "Getting IP address and location...";
-    else setEmployeeStatus("Getting IP address and location...");
+    if (CONFIG.DEMO_MODE) await fetchPublicConfig();
+    const locationStatus = CONFIG.DEMO_MODE ? "Using simulated office IP and GPS..." : "Getting IP address and location...";
+    if (quick) ui.quickStatus.textContent = locationStatus;
+    else setEmployeeStatus(locationStatus);
     const values = await Promise.all([getPublicIP(), getCurrentPosition()]);
     const ip = values[0];
     const position = values[1];
@@ -1034,13 +1062,14 @@ async function handleLeaveSubmit() {
   setEmployeeResult("", false);
 
   try {
-    if (window.location.protocol !== "https:" && window.location.hostname !== "localhost") {
+    if (!CONFIG.DEMO_MODE && window.location.protocol !== "https:" && window.location.hostname !== "localhost") {
       throw new Error("Use HTTPS to submit a leave request securely");
     }
     const requestTimestamp = await fetchNetworkTimestamp();
     const proof = ui.leaveProof && ui.leaveProof.files[0];
     if (proof && !(["image/png", "image/jpeg", "image/webp", "application/pdf"].includes(proof.type))) throw new Error("Proof must be a PNG, JPEG, WebP, or PDF");
-    if (proof && proof.size > 5 * 1024 * 1024) throw new Error("Proof must be 5 MB or smaller");
+    const maxProofBytes = CONFIG.DEMO_MODE ? CONFIG.DEMO_MAX_PROOF_BYTES : 5 * 1024 * 1024;
+    if (proof && proof.size > maxProofBytes) throw new Error(CONFIG.DEMO_MODE ? "Demo proof must be 512 KiB or smaller" : "Proof must be 5 MB or smaller");
     const evidenceDataUrl = proof ? await readFileDataUrl(proof) : "";
     const result = await postToBackend({
       action: "submitLeave",
@@ -1990,6 +2019,35 @@ function bindEvents() {
   }
 }
 
+function initDemo() {
+  const banner = document.getElementById("demo-banner");
+  if (banner) banner.hidden = !CONFIG.DEMO_MODE;
+  const proofHint = document.getElementById("leave-proof-hint");
+  if (proofHint) proofHint.textContent = CONFIG.DEMO_MODE
+    ? "PNG, JPEG, WebP, or PDF. Demo limit: 512 KiB per file, 1.5 MiB total proof storage. Browser storage limits also apply."
+    : "PNG, JPEG, WebP, or PDF, up to 5 MB.";
+  if (!CONFIG.DEMO_MODE) return;
+  const quickHint = document.getElementById("quick-punch-hint");
+  if (quickHint) quickHint.textContent = "Try clocking in or out with this pre-registered demo device. IP and GPS are simulated; no permissions are needed.";
+  const resetButton = document.getElementById("demo-reset-btn");
+  if (resetButton) resetButton.addEventListener("click", async function () {
+    if (!window.confirm("Reset all demo data in this browser to the sample data? Your device ID will be preserved. This cannot be undone.")) return;
+    resetButton.disabled = true;
+    const result = document.getElementById("demo-reset-result");
+    try {
+      ensureBackendConfigured();
+      await window.TAPIN_DEMO.reset();
+      [CONFIG.STORAGE_KEYS.adminToken, CONFIG.STORAGE_KEYS.employeeSession, CONFIG.STORAGE_KEYS.portalRole].forEach(function (key) {
+        sessionStorage.removeItem(key);
+      });
+      window.location.reload();
+    } catch (error) {
+      if (result) result.textContent = error.message || "Could not reset the demo. Please try again.";
+      resetButton.disabled = false;
+    }
+  });
+}
+
 async function restoreSessionFromStorage() {
   const requestedRole = getRequestedRole();
   const storedRole = getStoredPortalRole();
@@ -2029,8 +2087,9 @@ async function restoreSessionFromStorage() {
 }
 
 async function bootstrap() {
+  initDemo();
   if (ui.deviceIdValue) ui.deviceIdValue.textContent = getOrCreateDeviceUUID();
-  if (!CONFIG.GAS_WEB_APP_URL) {
+  if (!CONFIG.DEMO_MODE && !CONFIG.GAS_WEB_APP_URL) {
     setPortalResult("Set GAS_WEB_APP_URL in web/config.js first", true);
   }
 
@@ -2040,7 +2099,7 @@ async function bootstrap() {
   void initServiceWorker();
 
   try {
-    if (CONFIG.GAS_WEB_APP_URL) {
+    if (CONFIG.DEMO_MODE || CONFIG.GAS_WEB_APP_URL) {
       await fetchPublicConfig();
       if (state.backendApiVersion < 2) throw new Error("Backend update required. Ask your administrator to deploy API version 2.");
     }

@@ -1,7 +1,7 @@
 {
-  "name": "TapIn",
-  "short_name": "TapIn",
-  "description": "One-tap attendance PWA",
+  "name": "TapIn Demo",
+  "short_name": "TapIn Demo",
+  "description": "Browser-only attendance demo. Sample data stays on this device.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://api.ipify.org https://script.google.com https://script.googleusercontent.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'" />
     <meta name="referrer" content="strict-origin-when-cross-origin" />
     <meta name="theme-color" content="#16816a" />
     <meta name="mobile-web-app-capable" content="yes" />
@@ -22,6 +22,14 @@
   </head>
   <body data-entry-role="employee">
     <main id="portal-app" class="app portal-app">
+      <aside id="demo-banner" class="demo-banner" aria-labelledby="demo-title" hidden>
+        <h2 id="demo-title">Demo · Browser-only workspace</h2>
+        <p>Explore every feature with sample data. Admin sign-in: <code>admin</code> / <code>demo-password</code>. This device is already registered as an employee.</p>
+        <p>All business data and proof files stay in this browser's localStorage. Nothing is sent to a server. Data is not shared across browsers and is lost if site storage is cleared. Do not enter real personal or confidential data.</p>
+        <p>Office IP and GPS are simulated; no location or notification permissions are requested. Time starts from your device clock and advances between punches so clock-in/out can be tried immediately.</p>
+        <button id="demo-reset-btn" class="ghost-btn" type="button">Reset demo data</button>
+        <p id="demo-reset-result" class="result" role="status" aria-live="polite"></p>
+      </aside>
       <header class="topbar">
         <div>
           <h1 class="brand-wordmark" aria-label="TapIn">tap<span>in</span></h1>
@@ -44,7 +52,7 @@
       <section id="quick-punch" class="portal-card">
         <p class="label">Quick attendance</p>
         <h2 class="portal-title">Clock in or out</h2>
-        <p class="portal-copy">Use a registered device and allow location access.</p>
+        <p id="quick-punch-hint" class="portal-copy">Use a registered device and allow location access.</p>
         <div class="portal-actions"><button id="quick-in-btn" class="primary-btn" type="button">Clock in</button><button id="quick-out-btn" class="ghost-btn" type="button">Clock out</button></div>
         <p id="quick-status" class="status" role="status" aria-live="polite">Ready</p>
         <p id="quick-result" class="result" role="status" aria-live="polite"></p>
@@ -123,7 +131,8 @@
             </div>
           </div>
           <textarea id="leave-reason" class="leave-reason" placeholder="Reason for leave (required)" maxlength="200" rows="3"></textarea>
-          <label>Sick leave proof (image or PDF) <input id="leave-proof" type="file" accept="image/*,.pdf,application/pdf" /></label>
+          <label>Sick leave proof (image or PDF) <input id="leave-proof" type="file" accept="image/png,image/jpeg,image/webp,.pdf,application/pdf" aria-describedby="leave-proof-hint" /></label>
+          <p id="leave-proof-hint" class="meta">PNG, JPEG, WebP, or PDF, up to 5 MB.</p>
           <button id="leave-btn" class="leave-btn" type="button">Submit leave request</button>
           <h3>My leave requests</h3><div id="employee-leave-history" class="table-wrap"></div>
         </section>
@@ -340,6 +349,7 @@
     </main>
 
     <script src="./config.js" defer></script>
+    <script src="./demo-runtime.js" defer></script>
     <script src="./app.js" defer></script>
   </body>
 </html>
