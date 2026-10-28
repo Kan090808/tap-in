@@ -20,7 +20,7 @@ test('monthly report combines paired punches with approved half-day leave', () =
   assert.equal(day.absenceDays, 0);
   assert.equal(day.overtimePay, 75);
 
-  assert.equal(gas.post({ action: 'employeeCancelLeave', deviceUUID: 'd1', requestId: 'leave1' }).ok, true);
+  assert.equal(gas.employee({ action: 'employeeCancelLeave', deviceUUID: 'd1', requestId: 'leave1' }).ok, true);
   const afterCancellation = monthly().report.days.find((item) => item.date === '2026-10-01');
   assert.equal(afterCancellation.leaveHours, 0);
   assert.equal(afterCancellation.overtimeHours, 0);

@@ -52,7 +52,7 @@
       <section id="quick-punch" class="portal-card">
         <p class="label">Quick attendance</p>
         <h2 class="portal-title">Clock in or out</h2>
-        <p id="quick-punch-hint" class="portal-copy">Use a registered device and allow location access.</p>
+        <p id="quick-punch-hint" class="portal-copy">Sign in with your registered device and password before clocking in or out.</p>
         <div class="portal-actions"><button id="quick-in-btn" class="primary-btn" type="button">Clock in</button><button id="quick-out-btn" class="ghost-btn" type="button">Clock out</button></div>
         <p id="quick-status" class="status" role="status" aria-live="polite">Ready</p>
         <p id="quick-result" class="result" role="status" aria-live="polite"></p>
@@ -66,10 +66,22 @@
         </div>
 
         <section id="employee-login-panel" class="portal-panel">
-          <p class="portal-copy">Sign in with your registered device. If it is not registered, copy the device ID above and send it to your admin.</p>
+          <p class="portal-copy">Sign in with your registered device and password. If this is your first sign-in, you will be asked to set a password. If the device is not registered, send its ID to your admin.</p>
           <div class="portal-actions">
             <button id="employee-login-btn" type="button" class="primary-btn">Sign in with this device</button>
           </div>
+          <form id="employee-auth-form" class="admin-form" hidden>
+            <h3 id="employee-auth-title">Sign in</h3>
+            <p id="employee-auth-hint" class="portal-copy"></p>
+            <label>Password
+              <input id="employee-password" type="password" autocomplete="current-password" required minlength="8" maxlength="128" aria-describedby="employee-auth-hint" />
+            </label>
+            <label id="employee-confirm-label" hidden>Confirm password
+              <input id="employee-confirm-password" type="password" autocomplete="new-password" maxlength="128" />
+            </label>
+            <button id="employee-auth-submit" class="primary-btn" type="submit">Sign in</button>
+            <button id="employee-auth-cancel" class="ghost-btn" type="button">Cancel</button>
+          </form>
         </section>
 
         <section id="admin-login-panel" class="portal-panel" hidden>

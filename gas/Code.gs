@@ -102,6 +102,9 @@ function doPost(e) {
     }
 
     const additionalActions = {
+      employeeSetupPassword: handleEmployeeSetupPassword_,
+      employeeLogin: handleEmployeeLogin_,
+      employeeLogout: handleEmployeeLogout_,
       adminGetScheduleGroups: handleAdminGetScheduleGroups_,
       adminSaveScheduleGroup: handleAdminSaveScheduleGroup_,
       adminDeleteScheduleGroup: handleAdminDeleteScheduleGroup_,
@@ -157,6 +160,7 @@ function doGet(e) {
 }
 
 function handlePunch_(request, runtimeConfig) {
+  requireEmployeeSession_(request, runtimeConfig);
   validatePunchRequest_(request, runtimeConfig);
   requireFreshRequest_(request, "punch", DEFAULT_CONFIG.REQUEST_FRESHNESS_WINDOW_MS);
 
@@ -168,7 +172,7 @@ function handlePunch_(request, runtimeConfig) {
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
-    const employee = requireEmployeeByDevice_(runtimeConfig, request.deviceUUID);
+    const employee = requireEmployeeSession_(request, runtimeConfig);
     employeeName = employee.name;
     validatePunchSequence_(runtimeConfig, employeeName, request.deviceUUID, punchType, serverTime);
     appendAttendanceLog_(runtimeConfig, {
@@ -569,15 +573,16 @@ function removeEmployeeBindings_(sheet, employeeName, deviceUUID) {
 }
 
 function handleSubmitLeave_(request, runtimeConfig) {
+  requireEmployeeSession_(request, runtimeConfig);
   validateLeaveRequest_(request);
   requireFreshRequest_(request, "submitLeave", DEFAULT_CONFIG.REQUEST_FRESHNESS_WINDOW_MS);
 
-  requireEmployeeByDevice_(runtimeConfig, request.deviceUUID);
+  requireEmployeeSession_(request, runtimeConfig);
   const evidenceUrl = request.evidenceDataUrl ? saveLeaveEvidence_(request.evidenceDataUrl, request.requestId) : "";
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
-  const employee = requireEmployeeByDevice_(runtimeConfig, request.deviceUUID);
+  const employee = requireEmployeeSession_(request, runtimeConfig);
   const leaveSheet = getOrCreateSheet_(runtimeConfig, runtimeConfig.leaveSheetName, [
     "RequestID", "EmployeeName", "DeviceUUID", "LeaveType",
     "StartDate", "EndDate", "Reason", "Status",
@@ -801,6 +806,7 @@ function handleAdminGetCalendar_(request, runtimeConfig) {
 }
 
 function handleEmployeeGetCalendar_(request, runtimeConfig) {
+  requireEmployeeSession_(request, runtimeConfig);
   const deviceUUID = normalizeText_(request.deviceUUID);
   if (!deviceUUID) {
     throw new Error("Missing device UUID");
@@ -810,7 +816,7 @@ function handleEmployeeGetCalendar_(request, runtimeConfig) {
     throw new Error("This device is not registered. Please send your Device ID to an administrator.");
   }
   const employeeName = binding.employeeName;
-  const employee = requireEmployeeByDevice_(runtimeConfig, deviceUUID);
+  const employee = requireEmployeeSession_(request, runtimeConfig);
 
   const year = Math.round(Number(request.year));
   const month = Math.round(Number(request.month));
@@ -873,15 +879,16 @@ function handleEmployeeGetCalendar_(request, runtimeConfig) {
 
 function handleEmployeeResolveSession_(request, runtimeConfig) {
   const deviceUUID = normalizeText_(request.deviceUUID);
-  if (!deviceUUID) {
-    throw new Error("Missing device UUID");
+  if (!deviceUUID) throw new Error("Missing device UUID");
+  let employee;
+  try { employee = requireEmployeeByDevice_(runtimeConfig, deviceUUID); } catch (_error) {
+    return jsonResponse_(true, "Employee session resolved", { isRegistered: false, employeeName: "", deviceUUID: deviceUUID, requiresPasswordSetup: false, isAuthenticated: false });
   }
-  const binding = findBindingByDeviceUUID_(runtimeConfig, deviceUUID);
-  return jsonResponse_(true, "Employee session resolved", {
-    isRegistered: Boolean(binding.employeeName),
-    employeeName: binding.employeeName || "",
-    deviceUUID: deviceUUID
-  });
+  let authenticated = false;
+  if (request.employeeToken) {
+    try { requireEmployeeSession_(request, runtimeConfig); authenticated = true; } catch (_error) {}
+  }
+  return jsonResponse_(true, "Employee session resolved", { isRegistered: true, employeeName: employee.name, deviceUUID: deviceUUID, requiresPasswordSetup: !employeeCredential_(employee.employeeId), isAuthenticated: authenticated });
 }
 
 function parseRequest_(e) {
@@ -1460,15 +1467,17 @@ function ensureLeaveColumns_(sheet) {
 }
 
 function handleEmployeeGetLeaveRequests_(request, runtimeConfig) {
-  const employee = requireEmployeeByDevice_(runtimeConfig, request.deviceUUID);
+  requireEmployeeSession_(request, runtimeConfig);
+  const employee = requireEmployeeSession_(request, runtimeConfig);
   return jsonResponse_(true, "Leave requests loaded", { leaves: leaveRows_(runtimeConfig).filter(function (leave) {
     return leave.employeeId === employee.employeeId;
   }) });
 }
 
 function handleEmployeeCancelLeave_(request, runtimeConfig) {
+  requireEmployeeSession_(request, runtimeConfig);
   return integrityLock_(function () {
-    const employee = requireEmployeeByDevice_(runtimeConfig,request.deviceUUID);
+    const employee = requireEmployeeSession_(request, runtimeConfig);
     const leave = leaveRows_(runtimeConfig).filter(function (item) { return item.requestId === normalizeText_(request.requestId) && item.employeeId === employee.employeeId; })[0];
     if (!leave) throw new Error('Leave request not found');
     if (leave.status === 'cancelled' && leave.cancelledBy === employee.employeeId) return jsonResponse_(true,'Leave cancelled',{requestId:leave.requestId,status:'cancelled'});
@@ -1530,9 +1539,10 @@ function validateCorrection_(request) {
 }
 
 function handleEmployeeSubmitCorrection_(request, runtimeConfig) {
+  requireEmployeeSession_(request, runtimeConfig);
   const correction = validatedCorrection_(request);
   return integrityLock_(function () {
-    const employee = requireEmployeeByDevice_(runtimeConfig, request.deviceUUID);
+    const employee = requireEmployeeSession_(request, runtimeConfig);
     const submissionId = normalizeText_(request.submissionId);
     const existing = submissionId && correctionRows_(runtimeConfig).filter(function (item) { return item.employeeId === employee.employeeId && item.submissionId === submissionId; })[0];
     if (existing) {
@@ -1545,7 +1555,8 @@ function handleEmployeeSubmitCorrection_(request, runtimeConfig) {
 }
 
 function handleEmployeeGetCorrections_(request, runtimeConfig) {
-  const employee = requireEmployeeByDevice_(runtimeConfig,request.deviceUUID);
+  requireEmployeeSession_(request, runtimeConfig);
+  const employee = requireEmployeeSession_(request, runtimeConfig);
   return jsonResponse_(true,'Corrections loaded',{corrections:correctionRows_(runtimeConfig).filter(function (item) { return item.employeeId === employee.employeeId; })});
 }
 

@@ -16,6 +16,7 @@ const CONFIG = {
 };
 
 const EMPLOYEE_MODES = ["punch", "leave", "calendar", "correction"];
+const EMPLOYEE_SESSION_ACTIONS = ["punch", "submitLeave", "employeeGetCalendar", "employeeGetLeaveRequests", "employeeCancelLeave", "employeeSubmitCorrection", "employeeGetCorrections", "employeeLogout"];
 const ADMIN_VIEWS = ["employees", "config", "logs", "leaves", "calendar", "schedules", "corrections", "payroll"];
 
 const state = {
@@ -25,6 +26,8 @@ const state = {
   activeRoleTab: getRequestedRole(),
   sessionRole: "",
   employeeBinding: null,
+  employeeAuthMode: "",
+  employeeAuthBusy: false,
   visibleFunctionTabs: [],
   employeeMode: getEmployeeMode(),
   adminView: getAdminView(),
@@ -52,6 +55,14 @@ const ui = {
   employeeLoginPanel: document.getElementById("employee-login-panel"),
   adminLoginPanel: document.getElementById("admin-login-panel"),
   employeeLoginBtn: document.getElementById("employee-login-btn"),
+  employeeAuthForm: document.getElementById("employee-auth-form"),
+  employeeAuthTitle: document.getElementById("employee-auth-title"),
+  employeeAuthHint: document.getElementById("employee-auth-hint"),
+  employeePassword: document.getElementById("employee-password"),
+  employeeConfirmLabel: document.getElementById("employee-confirm-label"),
+  employeeConfirmPassword: document.getElementById("employee-confirm-password"),
+  employeeAuthSubmit: document.getElementById("employee-auth-submit"),
+  employeeAuthCancel: document.getElementById("employee-auth-cancel"),
   loginForm: document.getElementById("login-form"),
   loginBtn: document.getElementById("login-btn"),
   usernameInput: document.getElementById("username-input"),
@@ -220,7 +231,7 @@ function getEmployeeSession() {
       return null;
     }
     const data = JSON.parse(raw);
-    if (!data || !data.deviceUUID) {
+    if (!data || !data.deviceUUID || !data.token) {
       return null;
     }
     return data;
@@ -230,7 +241,7 @@ function getEmployeeSession() {
 }
 
 function setEmployeeSession(binding) {
-  if (!binding || !binding.deviceUUID) {
+  if (!binding || !binding.deviceUUID || !binding.token) {
     sessionStorage.removeItem(CONFIG.STORAGE_KEYS.employeeSession);
     return;
   }
@@ -238,7 +249,9 @@ function setEmployeeSession(binding) {
     CONFIG.STORAGE_KEYS.employeeSession,
     JSON.stringify({
       employeeName: binding.employeeName || "",
-      deviceUUID: binding.deviceUUID
+      deviceUUID: binding.deviceUUID,
+      token: binding.token,
+      expiresAt: binding.expiresAt || ""
     })
   );
 }
@@ -292,6 +305,9 @@ function setBusy(isBusy) {
   if (ui.employeeLoginBtn) {
     ui.employeeLoginBtn.disabled = isBusy;
   }
+  [ui.employeeAuthSubmit, ui.employeeAuthCancel, ui.employeePassword, ui.employeeConfirmPassword].forEach(function (element) {
+    if (element) element.disabled = isBusy;
+  });
   if (ui.punchBtn) {
     ui.punchBtn.disabled = isBusy || state.punchBusy;
     ui.punchBtn.textContent = isBusy ? "Working..." : "Clock in";
@@ -324,6 +340,10 @@ function ensureBackendConfigured() {
 
 async function postToBackend(payload) {
   ensureBackendConfigured();
+  if (EMPLOYEE_SESSION_ACTIONS.includes(payload.action)) {
+    const session = getEmployeeSession();
+    payload = Object.assign({}, payload, { employeeToken: session ? session.token : "" });
+  }
   if (state.backendApiVersion < 2) {
     const error = new Error("Backend update required. Ask your administrator to deploy and verify API version 2 before using this app.");
     error.preSubmission = true;
@@ -406,9 +426,11 @@ async function fetchNetworkTimestamp() {
 
 async function resolveEmployeeSession() {
   const deviceUUID = getOrCreateDeviceUUID();
+  const session = getEmployeeSession();
   const data = await postToBackend({
     action: "employeeResolveSession",
-    deviceUUID: deviceUUID
+    deviceUUID: deviceUUID,
+    employeeToken: session ? session.token : ""
   });
   if (!data.isRegistered) {
     return {
@@ -420,7 +442,11 @@ async function resolveEmployeeSession() {
   return {
     isRegistered: true,
     employeeName: data.employeeName || "",
-    deviceUUID: data.deviceUUID || deviceUUID
+    deviceUUID: data.deviceUUID || deviceUUID,
+    requiresPasswordSetup: data.requiresPasswordSetup === true,
+    isAuthenticated: data.isAuthenticated === true,
+    token: data.isAuthenticated && session ? session.token : "",
+    expiresAt: session ? session.expiresAt : ""
   };
 }
 
@@ -524,6 +550,7 @@ function showPortalLogin(role, options) {
 
   state.sessionRole = "";
   state.employeeBinding = null;
+  resetEmployeeAuth();
   updateVisibleTabs("");
 
   if (ui.portalLogin) {
@@ -912,7 +939,34 @@ async function maybeNotifyArrival(locationStatus) {
   }
 }
 
+function resetEmployeeAuth() {
+  state.employeeAuthMode = "";
+  if (ui.employeeAuthForm) ui.employeeAuthForm.hidden = true;
+  if (ui.employeeLoginBtn) ui.employeeLoginBtn.hidden = false;
+  if (ui.employeePassword) ui.employeePassword.value = "";
+  if (ui.employeeConfirmPassword) ui.employeeConfirmPassword.value = "";
+}
+
+function showEmployeeAuth(mode) {
+  state.employeeAuthMode = mode;
+  const setup = mode === "setup";
+  ui.employeeAuthForm.hidden = false;
+  ui.employeeLoginBtn.hidden = true;
+  ui.employeeAuthTitle.textContent = setup ? "Set your password" : "Enter your password";
+  ui.employeeAuthHint.textContent = setup ? "Use 8–128 characters. After setting your password, sign in again." : "Enter the password for the employee registered to this device.";
+  ui.employeePassword.autocomplete = setup ? "new-password" : "current-password";
+  ui.employeeConfirmLabel.hidden = !setup;
+  ui.employeeConfirmPassword.required = setup;
+  ui.employeeConfirmPassword.disabled = !setup;
+  ui.employeeAuthSubmit.textContent = setup ? "Set password" : "Sign in";
+  ui.employeePassword.value = "";
+  ui.employeeConfirmPassword.value = "";
+  ui.employeePassword.focus();
+}
+
 async function handleEmployeeLogin() {
+  if (state.employeeAuthBusy) return;
+  state.employeeAuthBusy = true;
   setBusy(true);
   setPortalResult("", false);
   setPortalStatus("Checking device registration...");
@@ -928,10 +982,11 @@ async function handleEmployeeLogin() {
       });
       return;
     }
-    enterEmployeePortal(binding);
-    setEmployeeResult("", false);
-    setEmployeeStatus("Signed in");
-    updateUrlForEmployeeMode(state.employeeMode);
+    clearEmployeeSession();
+    setStoredPortalRole("");
+    showPortalLogin("employee");
+    showEmployeeAuth(binding.requiresPasswordSetup ? "setup" : "login");
+    setPortalStatus(binding.requiresPasswordSetup ? "Set a password to continue" : "Sign in with your password");
   } catch (error) {
     showPortalLogin("employee", {
       status: "Employee sign-in failed",
@@ -939,7 +994,56 @@ async function handleEmployeeLogin() {
       isError: true
     });
   } finally {
+    state.employeeAuthBusy = false;
     setBusy(false);
+    if (ui.employeeConfirmPassword) ui.employeeConfirmPassword.disabled = state.employeeAuthMode !== "setup";
+  }
+}
+
+async function handleEmployeeAuthSubmit(event) {
+  event.preventDefault();
+  if (state.employeeAuthBusy || !state.employeeAuthMode) return;
+  const setup = state.employeeAuthMode === "setup";
+  const password = ui.employeePassword.value;
+  if (password.length < 8 || password.length > 128) {
+    setPortalResult("Use a password with 8–128 characters", true);
+    return;
+  }
+  if (setup && password !== ui.employeeConfirmPassword.value) {
+    setPortalResult("Passwords do not match", true);
+    return;
+  }
+  state.employeeAuthBusy = true;
+  setBusy(true);
+  setPortalResult("", false);
+  setPortalStatus(setup ? "Setting your password..." : "Signing in...");
+  try {
+    const payload = { action: setup ? "employeeSetupPassword" : "employeeLogin", deviceUUID: getOrCreateDeviceUUID(), password: password };
+    if (setup) payload.confirmPassword = ui.employeeConfirmPassword.value;
+    const data = await postToBackend(payload);
+    if (setup) {
+      clearEmployeeSession();
+      setStoredPortalRole("");
+      showEmployeeAuth("login");
+      setPortalStatus("Sign in with your new password");
+      setPortalResult("Password set. Sign in to continue.", false);
+    } else {
+      if (!data.token || !data.isAuthenticated) throw new Error("Could not verify your sign-in. Try again.");
+      resetEmployeeAuth();
+      enterEmployeePortal(data);
+      setEmployeeResult("", false);
+      setEmployeeStatus("Signed in");
+      updateUrlForEmployeeMode(state.employeeMode);
+    }
+  } catch (error) {
+    setPortalStatus(setup ? "Could not set password" : "Employee sign-in failed");
+    setPortalResult(error.message || "Unknown error", true);
+  } finally {
+    ui.employeePassword.value = "";
+    ui.employeeConfirmPassword.value = "";
+    state.employeeAuthBusy = false;
+    setBusy(false);
+    ui.employeeConfirmPassword.disabled = state.employeeAuthMode !== "setup";
   }
 }
 
@@ -970,6 +1074,11 @@ function setPunchBusy(busy) {
 }
 
 async function handlePunch(punchType, quick) {
+  if (state.sessionRole !== "employee" || !getEmployeeSession()) {
+    showPortalLogin("employee", { status: "Please sign in before clocking in or out" });
+    if (ui.employeeLoginBtn) ui.employeeLoginBtn.focus();
+    return;
+  }
   if (state.punchBusy || state.sessionRole === "admin") return;
   setPunchBusy(true);
   punchType = punchType === "out" ? "out" : "in";
@@ -1614,6 +1723,13 @@ async function loginAdmin(username, password) {
 }
 
 async function logoutCurrentSession() {
+  if (getEmployeeSession()) {
+    try {
+      await postToBackend({ action: "employeeLogout", deviceUUID: getOrCreateDeviceUUID() });
+    } catch (_error) {
+      // Local sign-out still works when the server is unavailable.
+    }
+  }
   if (state.sessionRole === "admin") {
     try {
       const token = getAdminToken();
@@ -1782,6 +1898,12 @@ function bindEvents() {
   if (ui.employeeLoginBtn) {
     ui.employeeLoginBtn.addEventListener("click", handleEmployeeLogin);
   }
+  if (ui.employeeAuthForm) ui.employeeAuthForm.addEventListener("submit", handleEmployeeAuthSubmit);
+  if (ui.employeeAuthCancel) ui.employeeAuthCancel.addEventListener("click", function () {
+    resetEmployeeAuth();
+    setPortalStatus("Sign in with a registered device");
+    setPortalResult("", false);
+  });
 
   if (ui.employeeForm) {
     ui.employeeForm.addEventListener("submit", async function (event) {
@@ -2028,7 +2150,7 @@ function initDemo() {
     : "PNG, JPEG, WebP, or PDF, up to 5 MB.";
   if (!CONFIG.DEMO_MODE) return;
   const quickHint = document.getElementById("quick-punch-hint");
-  if (quickHint) quickHint.textContent = "Try clocking in or out with this pre-registered demo device. IP and GPS are simulated; no permissions are needed.";
+  if (quickHint) quickHint.textContent = "Sign in with this pre-registered demo device and your password before clocking in or out. IP and GPS are simulated; no permissions are needed.";
   const resetButton = document.getElementById("demo-reset-btn");
   if (resetButton) resetButton.addEventListener("click", async function () {
     if (!window.confirm("Reset all demo data in this browser to the sample data? Your device ID will be preserved. This cannot be undone.")) return;
@@ -2069,7 +2191,7 @@ async function restoreSessionFromStorage() {
   if (storedRole === "employee" && employeeSession) {
     try {
       const binding = await resolveEmployeeSession();
-      if (binding.isRegistered) {
+      if (binding.isRegistered && binding.isAuthenticated) {
         enterEmployeePortal(binding);
         return true;
       }

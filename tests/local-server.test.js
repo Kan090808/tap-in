@@ -102,8 +102,11 @@ test('real employee workflow and admin credentials survive local server restart'
   const saved = await local.post({ action: 'adminSaveEmployee', token: login.token, name: 'Local worker', deviceUUID: 'local-test-device', monthlySalary: 5200, scheduleGroupId: 'mon-sat', reason: 'Initial local acceptance test' });
   assert.equal(saved.ok, true, saved.message);
   assert.ok(saved.employee.employeeId);
+  assert.equal((await local.post({ action: 'employeeSetupPassword', deviceUUID: 'local-test-device', password: 'local-password', confirmPassword: 'local-password' })).ok, true);
+  const employeeLogin = await local.post({ action: 'employeeLogin', deviceUUID: 'local-test-device', password: 'local-password' });
+  assert.equal(employeeLogin.ok, true, employeeLogin.message);
   const proof = 'data:application/pdf;base64,' + Buffer.from('%PDF-1.4\nLocal test proof').toString('base64');
-  const leave = await local.post({ action: 'submitLeave', deviceUUID: 'local-test-device', requestId: 'local-sick-proof', requestTimestamp: Date.now(), leaveType: 'sick', startDate: '2099-11-02', endDate: '2099-11-02', dayPart: 'am', reason: 'Local proof upload test', evidenceDataUrl: proof });
+  const leave = await local.post({ action: 'submitLeave', deviceUUID: 'local-test-device', employeeToken: employeeLogin.token, requestId: 'local-sick-proof', requestTimestamp: Date.now(), leaveType: 'sick', startDate: '2099-11-02', endDate: '2099-11-02', dayPart: 'am', reason: 'Local proof upload test', evidenceDataUrl: proof });
   assert.equal(leave.ok, true, leave.message);
   await local.close();
   local = await launch(dataFile);
@@ -111,6 +114,8 @@ test('real employee workflow and admin credentials survive local server restart'
   assert.equal(resolved.ok, true, resolved.message);
   assert.equal(resolved.isRegistered, true);
   assert.equal(resolved.employeeName, 'Local worker');
+  assert.equal(resolved.requiresPasswordSetup, false);
+  assert.equal((await local.post({ action: 'employeeLogin', deviceUUID: 'local-test-device', password: 'local-password' })).ok, true);
   const again = await local.post({ action: 'adminLogin', username: 'admin', password: 'test-password' });
   assert.equal(again.ok, true, again.message);
   const employees = await local.post({ action: 'adminGetEmployees', token: again.token });

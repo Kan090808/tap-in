@@ -49,8 +49,12 @@ function createGas(initial = {}) {
     SpreadsheetApp: { openById: () => spreadsheet, flush() {} },
     PropertiesService: { getScriptProperties: () => ({
       getProperty: key => properties[key] ?? null,
-      setProperty(key, value) { properties[key] = String(value); },
-      setProperties(values) { Object.assign(properties, values); },
+      getProperties: () => ({ ...properties }),
+      setProperty(key, value) {
+        if (Buffer.byteLength(String(value)) > 9 * 1024) throw new Error('Script Property value exceeds 9 KiB');
+        properties[key] = String(value);
+      },
+      setProperties(values) { for (const [key, value] of Object.entries(values)) this.setProperty(key, value); },
       deleteProperty(key) { delete properties[key]; },
     }) },
     LockService: { getScriptLock: () => ({ waitLock() { if (held) throw new Error('Nested lock'); held = true; }, releaseLock() { held = false; } }) },
@@ -76,8 +80,16 @@ function createGas(initial = {}) {
   function post(request) { return JSON.parse(context.doPost({ postData: { contents: JSON.stringify(request) } }).getContent()); }
   context.setAdminCredential('admin', 'test-password');
   const login = post({ action: 'adminLogin', username: 'admin', password: 'test-password' });
+  function employee(request) {
+    let session;
+    try {
+      const person = context.requireEmployeeByDevice_(context.getRuntimeConfig_(), request.deviceUUID);
+      session = context.createEmployeeSession_(person, request.deviceUUID);
+    } catch (_error) {}
+    return post({ ...request, employeeToken: session?.token });
+  }
   return {
-    context, sheets, sheet, post,
+    context, sheets, sheet, post, employee,
     admin: request => post({ token: login.token, ...request }),
     properties,
     get writes() { return writes; },

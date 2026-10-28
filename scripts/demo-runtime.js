@@ -14,7 +14,7 @@ function validateState(state) {
   if (!dictionary(state) || state.version !== 1 || state.initialized !== true || !Number.isFinite(state.clockMs) ||
       !dictionary(state.properties) || !dictionary(state.spreadsheets) || !dictionary(state.files)) throw damaged();
   if (!Object.values(state.properties).every(value => typeof value === 'string')) throw damaged();
-  for (const key of ['TAPIN_ADMIN_SESSIONS_JSON', 'TAPIN_ADMIN_LOGIN_GUARD_JSON', 'TAPIN_REQUEST_NONCES_JSON']) {
+  for (const key of ['TAPIN_ADMIN_SESSIONS_JSON', 'TAPIN_ADMIN_LOGIN_GUARD_JSON', 'TAPIN_REQUEST_NONCES_JSON', ...Object.keys(state.properties).filter(key => key.startsWith('TAPIN_EMPLOYEE_SESSION_') || key.startsWith('TAPIN_EMPLOYEE_LOGIN_GUARD_'))]) {
     if (own(state.properties, key) && !dictionary(JSON.parse(state.properties[key]))) throw damaged();
   }
   if (!state.properties.TAPIN_ADMIN_USERNAME || !state.properties.TAPIN_ADMIN_PASSWORD_HASH || !state.properties.TAPIN_ADMIN_PASSWORD_SALT) throw damaged();
@@ -192,7 +192,7 @@ function seed(state, gas, clock, deviceUUID) {
       }
       for (const [punchType, time] of [['in', index === 1 && dayIndex === 2 ? '09:20' : '09:00'], ['out', new NativeDate(`${date}T12:00:00Z`).getUTCDay() === 6 ? '13:00' : index === 2 && dayIndex === 2 ? '20:00' : '18:00']]) {
         clock.now = NativeDate.parse(`${date}T${time}:00+08:00`);
-        post({ action: 'punch', deviceUUID: person.deviceUUID, punchType, ipAddress: '203.0.113.10', latitude: 3.139, longitude: 101.6869, accuracyMeters: 5,
+        post({ action: 'punch', deviceUUID: person.deviceUUID, employeeToken: gas.createEmployeeSession_(person, person.deviceUUID).token, punchType, ipAddress: '203.0.113.10', latitude: 3.139, longitude: 101.6869, accuracyMeters: 5,
           originProtocol: 'https', originHost: 'demo.local', requestTimestamp: clock.now, requestId: crypto.randomUUID() });
       }
     }
@@ -202,15 +202,18 @@ function seed(state, gas, clock, deviceUUID) {
   const approvedDate = `${today.slice(0, 7)}-27`;
   function leave(person, date, leaveType, reason, evidenceDataUrl) {
     const requestId = crypto.randomUUID();
-    post({ action: 'submitLeave', deviceUUID: person.deviceUUID, requestId, requestTimestamp: clock.now, leaveType, startDate: date, endDate: date, dayPart: 'full', reason, evidenceDataUrl });
+    post({ action: 'submitLeave', deviceUUID: person.deviceUUID, employeeToken: gas.createEmployeeSession_(person, person.deviceUUID).token, requestId, requestTimestamp: clock.now, leaveType, startDate: date, endDate: date, dayPart: 'full', reason, evidenceDataUrl });
     return requestId;
   }
   leave(people[0], pendingDate, 'personal', 'Family appointment — pending review');
   const approved = leave(people[1], approvedDate, 'sick', 'Medical appointment', sampleProof());
   post({ action: 'adminUpdateLeaveStatus', token, requestId: approved, status: 'approved', reviewNote: 'Demo medical proof reviewed' });
-  post({ action: 'employeeSubmitCorrection', deviceUUID: people[0].deviceUUID, date: pendingDate, time: '09:00', punchType: 'in', reason: 'Forgot to clock in — pending review', submissionId: crypto.randomUUID() });
+  post({ action: 'employeeSubmitCorrection', deviceUUID: people[0].deviceUUID, employeeToken: gas.createEmployeeSession_(people[0], people[0].deviceUUID).token, date: pendingDate, time: '09:00', punchType: 'in', reason: 'Forgot to clock in — pending review', submissionId: crypto.randomUUID() });
   for (const person of people) post({ action: 'adminSaveMonthlyAdjustment', token, employeeId: person.employeeId, year, month, payAmount: 150, reason: 'Demo performance bonus' });
   post({ action: 'adminLogout', token });
+  for (const key of Object.keys(state.properties)) {
+    if (key.startsWith('TAPIN_EMPLOYEE_SESSION_')) delete state.properties[key];
+  }
   state.clockMs = clock.now;
   state.initialized = true;
 }
@@ -257,7 +260,7 @@ export function createDemoRuntime(storage) {
       const response = decode(output);
       // Auth failures intentionally retain the real GAS login guard/session cleanup.
       // All other rejected operations roll back nonces, partial rows and proof files.
-      if (!response.ok && !['adminLogin', 'adminLogout'].includes(request.action)) {
+      if (!response.ok && !['adminLogin', 'adminLogout', 'employeeLogin', 'employeeLogout'].includes(request.action)) {
         if (!persisted) storage.setItem(STATE_KEY, beforeRequest);
         return response;
       }

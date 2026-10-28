@@ -16,15 +16,15 @@ function fixture() {
 
 test('employee calendar retains renamed history and does not expose it to a reused device', () => {
   const gas = fixture();
-  const own = gas.post({ action: 'employeeGetCalendar', deviceUUID: 'new-device', year: 2026, month: 10 });
+  const own = gas.employee({ action: 'employeeGetCalendar', deviceUUID: 'new-device', year: 2026, month: 10 });
   assert.equal(own.ok, true, own.message);
   assert.equal(own.punchesByDate['2026-10-01'].length, 2);
   assert.ok(own.leavesByDate['2026-10-02']);
-  const other = gas.post({ action: 'employeeGetCalendar', deviceUUID: 'old-device', year: 2026, month: 10 });
+  const other = gas.employee({ action: 'employeeGetCalendar', deviceUUID: 'old-device', year: 2026, month: 10 });
   assert.equal(other.ok, true, other.message);
   assert.equal(other.punchesByDate['2026-10-01'], undefined);
   assert.equal(other.leavesByDate['2026-10-02'], undefined);
-  assert.equal(gas.post({ action: 'employeeCancelLeave', deviceUUID: 'old-device', requestId: 'l1' }).ok, false);
+  assert.equal(gas.employee({ action: 'employeeCancelLeave', deviceUUID: 'old-device', requestId: 'l1' }).ok, false);
 });
 
 test('archiving preserves master data and prevents all device employee access', () => {
@@ -36,8 +36,8 @@ test('archiving preserves master data and prevents all device employee access', 
   assert.equal(result.employees[0].employeeId, 'e1');
   assert.equal(result.employees[0].status, 'archived');
   assert.equal(gas.post({ action: 'employeeResolveSession', deviceUUID: 'new-device' }).isRegistered, false);
-  assert.equal(gas.post({ action: 'employeeGetLeaveRequests', deviceUUID: 'new-device' }).ok, false);
-  assert.equal(gas.post({ action: 'employeeGetCorrections', deviceUUID: 'new-device' }).ok, false);
+  assert.equal(gas.employee({ action: 'employeeGetLeaveRequests', deviceUUID: 'new-device' }).ok, false);
+  assert.equal(gas.employee({ action: 'employeeGetCorrections', deviceUUID: 'new-device' }).ok, false);
 });
 
 test('pending review reaches older requests and cursor pages are stable on timestamp ties', () => {
@@ -124,7 +124,7 @@ test('admin and employee calendars accept native spreadsheet dates', () => {
   const admin = gas.admin({ action: 'adminGetCalendar', year: 2026, month: 10 });
   assert.equal(admin.ok, true, admin.message);
   assert.ok(admin.leavesByDate['2026-10-02']);
-  const own = gas.post({ action: 'employeeGetCalendar', deviceUUID: 'new-device', year: 2026, month: 10 });
+  const own = gas.employee({ action: 'employeeGetCalendar', deviceUUID: 'new-device', year: 2026, month: 10 });
   assert.ok(own.leavesByDate['2026-10-02']);
 });
 
@@ -151,7 +151,7 @@ test('sensitive history and evidence APIs require a valid unexpired administrato
 test('an archived device cannot write attendance and new punches record immutable ownership', () => {
   const gas = fixture();
   const request = { action: 'punch', punchType: 'in', deviceUUID: 'new-device', ipAddress: '203.0.113.10', latitude: 3, longitude: 101, accuracyMeters: 20, originProtocol: 'https', originHost: 'example.test', requestTimestamp: Date.now(), requestId: 'punch-before-archive' };
-  const result = gas.post(request);
+  const result = gas.employee(request);
   assert.equal(result.ok, true, result.message);
   assert.equal(gas.sheets.get('AttendanceLogs').data.at(-1)[8], 'e1');
   gas.admin({ action: 'adminDeleteEmployee', employeeId: 'e1' });

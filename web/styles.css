@@ -258,6 +258,11 @@ body {
   margin-top: 14px;
 }
 
+#employee-auth-title,
+#employee-auth-hint {
+  margin: 0;
+}
+
 .role-switch {
   display: grid;
   grid-template-columns: 1fr 1fr;

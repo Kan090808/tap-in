@@ -9,16 +9,17 @@ function app() {
     const item={value:'', textContent:'', innerHTML:'', disabled:false, hidden:false, dataset:{},children:[],classList:{toggle(){},add(){},remove(){}},listeners:{},
       replaceChildren(...items){this.children=items;},append(...items){this.children.push(...items);},appendChild(child){this.children.push(child);return child;},
       insertRow(){return this.appendChild(element());},insertCell(){return this.appendChild(element());},createTBody(){return this.appendChild(element());},
-      addEventListener(name,fn){this.listeners[name]=fn;},focus(){},reset(){}};
+      addEventListener(name,fn){this.listeners[name]=fn;},setAttribute(name,value){this[name]=value;},focus(){},reset(){}};
     return item;
   }
   const storage = new Map();
   const context = vm.createContext({console, URL, Date, Number, JSON, Math, setTimeout,clearTimeout, AbortController,
-    window:{location:new URL('https://tapin.test/'),TAPIN_CONFIG:{GAS_WEB_APP_URL:'https://gas.test/'},crypto:{randomUUID:()=> 'uuid'},},
+    window:{location:new URL('https://tapin.test/'),history:{replaceState(){}},TAPIN_CONFIG:{GAS_WEB_APP_URL:'https://gas.test/'},crypto:{randomUUID:()=> 'uuid'},},
     document:{body:{dataset:{}},createElement:element,getElementById(id){if(!elements.has(id))elements.set(id,element());return elements.get(id);}},
-    localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)}, sessionStorage:{getItem:k=>storage.get(k)},navigator:{userAgent:'test'}});
+    localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)}, sessionStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},navigator:{userAgent:'test'}});
   vm.runInContext(fs.readFileSync('web/app.js','utf8').replace(/^bootstrap\(\);$/m,''),context);
   vm.runInContext('state.backendApiVersion=2',context);
+  vm.runInContext('setEmployeeSession({deviceUUID:"uuid",token:"employee-token"});state.sessionRole="employee"',context);
   return {context,elements,run:code=>vm.runInContext(code,context)};
 }
 
@@ -28,6 +29,96 @@ test('notification failure preserves confirmed punch success', async()=>{
   await a.run('submitPunch({punchType:"in"},true)');
   assert.equal(a.elements.get('quick-status').textContent,'Punch complete');
   assert.match(a.elements.get('quick-result').textContent,/successful/);
+});
+
+test('device sign-in opens setup without granting employee access',async()=>{
+  const a=app();a.run('clearEmployeeSession();state.sessionRole="";postToBackend=async()=>({isRegistered:true,requiresPasswordSetup:true,employeeName:"Alex",deviceUUID:"uuid"})');
+  await a.run('handleEmployeeLogin()');
+  assert.equal(a.run('state.sessionRole'),'');
+  assert.equal(a.elements.get('employee-auth-form').hidden,false);
+  assert.equal(a.elements.get('employee-confirm-label').hidden,false);
+  assert.equal(a.run('state.employeeAuthMode'),'setup');
+});
+
+test('setting password requires a separate password login and clears password fields',async()=>{
+  const a=app();a.run('clearEmployeeSession();state.sessionRole="";var calls=[];postToBackend=async p=>{calls.push(p);return {isRegistered:true,requiresPasswordSetup:true}}');
+  await a.run('handleEmployeeLogin()');
+  a.elements.get('employee-password').value='new-password';
+  a.elements.get('employee-confirm-password').value='new-password';
+  await a.run('handleEmployeeAuthSubmit({preventDefault(){}})');
+  assert.equal(a.run('calls[1].action'),'employeeSetupPassword');
+  assert.equal(a.run('state.sessionRole'),'');
+  assert.equal(a.run('getEmployeeSession()'),null);
+  assert.equal(a.run('state.employeeAuthMode'),'login');
+  assert.equal(a.elements.get('employee-password').value,'');
+  assert.equal(a.elements.get('employee-confirm-password').value,'');
+  a.run('postToBackend=async p=>{calls.push(p);return {isRegistered:true,isAuthenticated:true,token:"signed-token",deviceUUID:"uuid",employeeName:"Alex"}}');
+  a.elements.get('employee-password').value='new-password';
+  await a.run('handleEmployeeAuthSubmit({preventDefault(){}})');
+  assert.equal(a.run('calls[2].action'),'employeeLogin');
+  assert.equal(a.run('state.sessionRole'),'employee');
+  assert.equal(a.run('getEmployeeSession().token'),'signed-token');
+  assert.equal(a.elements.get('employee-password').value,'');
+});
+
+test('wrong password keeps employee locked out and legacy device session cannot restore access',async()=>{
+  const a=app();a.run('clearEmployeeSession();state.sessionRole="";postToBackend=async()=>({isRegistered:true,requiresPasswordSetup:false})');
+  await a.run('handleEmployeeLogin()');
+  a.run('postToBackend=async()=>{throw new Error("Invalid employee password")}');
+  a.elements.get('employee-password').value='wrong-password';
+  await a.run('handleEmployeeAuthSubmit({preventDefault(){}})');
+  assert.equal(a.run('state.sessionRole'),'');
+  assert.match(a.elements.get('portal-result').textContent,/Invalid employee password/);
+  assert.equal(a.elements.get('employee-password').value,'');
+  a.run('sessionStorage.setItem(CONFIG.STORAGE_KEYS.employeeSession,JSON.stringify({deviceUUID:"uuid"}));setStoredPortalRole("employee")');
+  await a.run('restoreSessionFromStorage()');
+  assert.equal(a.run('state.sessionRole'),'');
+});
+
+test('quick punch without login requests sign-in before location or submission',async()=>{
+  const a=app();a.run('clearEmployeeSession();state.sessionRole="";var calls=0;getPublicIP=async()=>{calls++};postToBackend=async()=>{calls++}');
+  await a.run('handlePunch("in",true)');
+  assert.equal(a.run('calls'),0);
+  assert.match(a.elements.get('portal-status').textContent,/sign in/i);
+});
+
+test('employee API requests carry session token and unrelated requests do not',async()=>{
+  const a=app();const calls=[];
+  a.context.fetch=async(url,opts)=>{calls.push(JSON.parse(opts.body));return {ok:true,text:async()=>JSON.stringify({ok:true})};};
+  await a.run('postToBackend({action:"employeeGetCalendar",deviceUUID:"uuid"})');
+  await a.run('postToBackend({action:"punch",deviceUUID:"uuid"})');
+  await a.run('postToBackend({action:"adminLogin",username:"admin",password:"test-password"})');
+  assert.equal(calls[0].employeeToken,'employee-token');
+  assert.equal(calls[1].employeeToken,'employee-token');
+  assert.equal(calls[2].employeeToken,undefined);
+});
+
+test('employee logout revokes the server session and clears local credentials',async()=>{
+  const a=app();a.run('var calls=[];postToBackend=async p=>{calls.push(p);return {ok:true}}');
+  await a.run('logoutCurrentSession()');
+  assert.equal(a.run('calls[0].action'),'employeeLogout');
+  assert.equal(a.run('getEmployeeSession()'),null);
+  assert.equal(a.run('state.sessionRole'),'');
+});
+
+test('valid session restores without asking for a password, expired session cannot',async()=>{
+  for (const authenticated of [true,false]) {
+    const a=app();a.run('state.sessionRole="";setStoredPortalRole("employee")');
+    a.context.fetch=async()=>({ok:true,text:async()=>JSON.stringify({ok:true,isRegistered:true,isAuthenticated:authenticated,employeeName:'Alex',deviceUUID:'uuid'})});
+    assert.equal(await a.run('restoreSessionFromStorage()'),authenticated);
+    assert.equal(a.run('state.sessionRole'),authenticated?'employee':'');
+    if (!authenticated) assert.equal(a.run('getEmployeeSession()'),null);
+  }
+});
+
+test('mismatched setup passwords cannot be submitted',async()=>{
+  const a=app();a.run('clearEmployeeSession();state.sessionRole="";var calls=0;postToBackend=async()=>{calls++;return {isRegistered:true,requiresPasswordSetup:true}}');
+  await a.run('handleEmployeeLogin()');
+  a.elements.get('employee-password').value='new-password';
+  a.elements.get('employee-confirm-password').value='different-password';
+  await a.run('handleEmployeeAuthSubmit({preventDefault(){}})');
+  assert.equal(a.run('calls'),1);
+  assert.match(a.elements.get('portal-result').textContent,/do not match/);
 });
 
 test('one punch disables all controls and ignores concurrent clicks',async()=>{

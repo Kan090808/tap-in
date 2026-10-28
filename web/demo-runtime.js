@@ -407,6 +407,9 @@
           return handleEmployeeResolveSession_(request, runtimeConfig);
         }
         const additionalActions = {
+          employeeSetupPassword: handleEmployeeSetupPassword_,
+          employeeLogin: handleEmployeeLogin_,
+          employeeLogout: handleEmployeeLogout_,
           adminGetScheduleGroups: handleAdminGetScheduleGroups_,
           adminSaveScheduleGroup: handleAdminSaveScheduleGroup_,
           adminDeleteScheduleGroup: handleAdminDeleteScheduleGroup_,
@@ -459,6 +462,7 @@
       }
     }
     function handlePunch_(request, runtimeConfig) {
+      requireEmployeeSession_(request, runtimeConfig);
       validatePunchRequest_(request, runtimeConfig);
       requireFreshRequest_(request, "punch", DEFAULT_CONFIG.REQUEST_FRESHNESS_WINDOW_MS);
       const locationStatus = request.ipAddress === runtimeConfig.officeStaticIp ? "Office" : "Remote/Field";
@@ -469,7 +473,7 @@
       const lock = LockService.getScriptLock();
       lock.waitLock(3e4);
       try {
-        const employee = requireEmployeeByDevice_(runtimeConfig, request.deviceUUID);
+        const employee = requireEmployeeSession_(request, runtimeConfig);
         employeeName = employee.name;
         validatePunchSequence_(runtimeConfig, employeeName, request.deviceUUID, punchType, serverTime);
         appendAttendanceLog_(runtimeConfig, {
@@ -850,14 +854,15 @@
       }
     }
     function handleSubmitLeave_(request, runtimeConfig) {
+      requireEmployeeSession_(request, runtimeConfig);
       validateLeaveRequest_(request);
       requireFreshRequest_(request, "submitLeave", DEFAULT_CONFIG.REQUEST_FRESHNESS_WINDOW_MS);
-      requireEmployeeByDevice_(runtimeConfig, request.deviceUUID);
+      requireEmployeeSession_(request, runtimeConfig);
       const evidenceUrl = request.evidenceDataUrl ? saveLeaveEvidence_(request.evidenceDataUrl, request.requestId) : "";
       const lock = LockService.getScriptLock();
       lock.waitLock(3e4);
       try {
-        const employee = requireEmployeeByDevice_(runtimeConfig, request.deviceUUID);
+        const employee = requireEmployeeSession_(request, runtimeConfig);
         const leaveSheet = getOrCreateSheet_(runtimeConfig, runtimeConfig.leaveSheetName, [
           "RequestID",
           "EmployeeName",
@@ -1105,6 +1110,7 @@
       });
     }
     function handleEmployeeGetCalendar_(request, runtimeConfig) {
+      requireEmployeeSession_(request, runtimeConfig);
       const deviceUUID = normalizeText_(request.deviceUUID);
       if (!deviceUUID) {
         throw new Error("Missing device UUID");
@@ -1114,7 +1120,7 @@
         throw new Error("This device is not registered. Please send your Device ID to an administrator.");
       }
       const employeeName = binding.employeeName;
-      const employee = requireEmployeeByDevice_(runtimeConfig, deviceUUID);
+      const employee = requireEmployeeSession_(request, runtimeConfig);
       const year = Math.round(Number(request.year));
       const month = Math.round(Number(request.month));
       if (!Number.isFinite(year) || year < 2e3 || year > 2099) {
@@ -1175,15 +1181,22 @@
     }
     function handleEmployeeResolveSession_(request, runtimeConfig) {
       const deviceUUID = normalizeText_(request.deviceUUID);
-      if (!deviceUUID) {
-        throw new Error("Missing device UUID");
+      if (!deviceUUID) throw new Error("Missing device UUID");
+      let employee;
+      try {
+        employee = requireEmployeeByDevice_(runtimeConfig, deviceUUID);
+      } catch (_error) {
+        return jsonResponse_(true, "Employee session resolved", { isRegistered: false, employeeName: "", deviceUUID, requiresPasswordSetup: false, isAuthenticated: false });
       }
-      const binding = findBindingByDeviceUUID_(runtimeConfig, deviceUUID);
-      return jsonResponse_(true, "Employee session resolved", {
-        isRegistered: Boolean(binding.employeeName),
-        employeeName: binding.employeeName || "",
-        deviceUUID
-      });
+      let authenticated = false;
+      if (request.employeeToken) {
+        try {
+          requireEmployeeSession_(request, runtimeConfig);
+          authenticated = true;
+        } catch (_error) {
+        }
+      }
+      return jsonResponse_(true, "Employee session resolved", { isRegistered: true, employeeName: employee.name, deviceUUID, requiresPasswordSetup: !employeeCredential_(employee.employeeId), isAuthenticated: authenticated });
     }
     function parseRequest_(e) {
       if (!e || !e.postData || !e.postData.contents) {
@@ -1733,14 +1746,16 @@
       sheet.getRange(1, 13, 1, 5).setValues([["DayPart", "EvidenceURL", "CancelledAt", "CancelledBy", "EmployeeID"]]);
     }
     function handleEmployeeGetLeaveRequests_(request, runtimeConfig) {
-      const employee = requireEmployeeByDevice_(runtimeConfig, request.deviceUUID);
+      requireEmployeeSession_(request, runtimeConfig);
+      const employee = requireEmployeeSession_(request, runtimeConfig);
       return jsonResponse_(true, "Leave requests loaded", { leaves: leaveRows_(runtimeConfig).filter(function(leave) {
         return leave.employeeId === employee.employeeId;
       }) });
     }
     function handleEmployeeCancelLeave_(request, runtimeConfig) {
+      requireEmployeeSession_(request, runtimeConfig);
       return integrityLock_(function() {
-        const employee = requireEmployeeByDevice_(runtimeConfig, request.deviceUUID);
+        const employee = requireEmployeeSession_(request, runtimeConfig);
         const leave = leaveRows_(runtimeConfig).filter(function(item) {
           return item.requestId === normalizeText_(request.requestId) && item.employeeId === employee.employeeId;
         })[0];
@@ -1803,9 +1818,10 @@
       return { date, time, punchType, reason };
     }
     function handleEmployeeSubmitCorrection_(request, runtimeConfig) {
+      requireEmployeeSession_(request, runtimeConfig);
       const correction = validatedCorrection_(request);
       return integrityLock_(function() {
-        const employee = requireEmployeeByDevice_(runtimeConfig, request.deviceUUID);
+        const employee = requireEmployeeSession_(request, runtimeConfig);
         const submissionId = normalizeText_(request.submissionId);
         const existing = submissionId && correctionRows_(runtimeConfig).filter(function(item) {
           return item.employeeId === employee.employeeId && item.submissionId === submissionId;
@@ -1819,7 +1835,8 @@
       });
     }
     function handleEmployeeGetCorrections_(request, runtimeConfig) {
-      const employee = requireEmployeeByDevice_(runtimeConfig, request.deviceUUID);
+      requireEmployeeSession_(request, runtimeConfig);
+      const employee = requireEmployeeSession_(request, runtimeConfig);
       return jsonResponse_(true, "Corrections loaded", { corrections: correctionRows_(runtimeConfig).filter(function(item) {
         return item.employeeId === employee.employeeId;
       }) });
@@ -2120,6 +2137,393 @@
         false
       );
     }
+    const EMPLOYEE_PASSWORD_PREFIX = "TAPIN_EMPLOYEE_PASSWORD_";
+    const EMPLOYEE_SESSION_PREFIX = "TAPIN_EMPLOYEE_SESSION_";
+    const EMPLOYEE_LOGIN_GUARD_PREFIX = "TAPIN_EMPLOYEE_LOGIN_GUARD_";
+    function employeeCredential_(employeeId) {
+      const raw = PropertiesService.getScriptProperties().getProperty(EMPLOYEE_PASSWORD_PREFIX + employeeId);
+      return raw ? JSON.parse(raw) : null;
+    }
+    function handleEmployeeSetupPassword_(request, runtimeConfig) {
+      return integrityLock_(function() {
+        const employee = requireEmployeeByDevice_(runtimeConfig, request.deviceUUID);
+        if (employeeCredential_(employee.employeeId)) throw new Error("Password is already set. Please sign in");
+        const password = String(request.password == null ? "" : request.password);
+        if (password.length < 8 || password.length > 128) throw new Error("Password must be between 8 and 128 characters");
+        if (password !== request.confirmPassword) throw new Error("Passwords do not match");
+        const salt = Utilities.getUuid().replace(/-/g, "") + Utilities.getUuid().replace(/-/g, "");
+        const hash = EmployeePassword.derive(sha256Hex_(password), salt);
+        PropertiesService.getScriptProperties().setProperty(EMPLOYEE_PASSWORD_PREFIX + employee.employeeId, JSON.stringify({ algorithm: "scrypt-sha256-v1", salt, hash }));
+        return jsonResponse_(true, "Password set. Please sign in again", { requiresPasswordSetup: false, isAuthenticated: false });
+      });
+    }
+    function handleEmployeeLogin_(request, runtimeConfig) {
+      return integrityLock_(function() {
+        const employee = requireEmployeeByDevice_(runtimeConfig, request.deviceUUID);
+        checkEmployeeLoginAllowed_(employee.employeeId);
+        const credential = employeeCredential_(employee.employeeId);
+        if (!credential) throw new Error("Set your password before signing in");
+        const password = String(request.password == null ? "" : request.password);
+        const validLength = password.length >= 8 && password.length <= 128;
+        const hash = validLength ? EmployeePassword.derive(sha256Hex_(password), credential.salt) : "";
+        if (credential.algorithm !== "scrypt-sha256-v1" || !constantTimeEqual_(hash, credential.hash)) {
+          recordEmployeeLoginFailure_(employee.employeeId);
+          return jsonResponse_(false, "Incorrect password");
+        }
+        PropertiesService.getScriptProperties().deleteProperty(EMPLOYEE_LOGIN_GUARD_PREFIX + employee.employeeId);
+        const session = createEmployeeSession_(employee, request.deviceUUID);
+        return jsonResponse_(true, "Signed in", { token: session.token, expiresAt: session.expiresAt, employeeName: employee.name, deviceUUID: employee.deviceUUID, isRegistered: true, isAuthenticated: true, requiresPasswordSetup: false });
+      });
+    }
+    function employeeLoginGuard_(employeeId) {
+      const raw = PropertiesService.getScriptProperties().getProperty(EMPLOYEE_LOGIN_GUARD_PREFIX + employeeId);
+      return raw ? JSON.parse(raw) : { count: 0, firstFailedAt: Date2.now(), lockedUntil: 0 };
+    }
+    function checkEmployeeLoginAllowed_(employeeId) {
+      if (employeeLoginGuard_(employeeId).lockedUntil > Date2.now()) throw new Error("Too many failed attempts. Please try again later");
+    }
+    function recordEmployeeLoginFailure_(employeeId) {
+      const now = Date2.now();
+      const lockMs = DEFAULT_CONFIG.ADMIN_LOGIN_LOCK_MINUTES * 60 * 1e3;
+      const current = employeeLoginGuard_(employeeId);
+      const expired = current.firstFailedAt < now - lockMs;
+      const count = expired ? 1 : current.count + 1;
+      PropertiesService.getScriptProperties().setProperty(EMPLOYEE_LOGIN_GUARD_PREFIX + employeeId, JSON.stringify({
+        count,
+        firstFailedAt: expired ? now : current.firstFailedAt,
+        lockedUntil: count >= DEFAULT_CONFIG.ADMIN_LOGIN_MAX_FAILURES ? now + lockMs : 0
+      }));
+    }
+    function constantTimeEqual_(left, right) {
+      if (typeof left !== "string" || typeof right !== "string" || left.length !== right.length) return false;
+      let difference = 0;
+      for (let i = 0; i < left.length; i += 1) difference |= left.charCodeAt(i) ^ right.charCodeAt(i);
+      return difference === 0;
+    }
+    function employeeSession_(employeeId) {
+      const raw = PropertiesService.getScriptProperties().getProperty(EMPLOYEE_SESSION_PREFIX + employeeId);
+      if (!raw) return null;
+      const session = JSON.parse(raw);
+      if (!session || typeof session.token !== "string" || !session.deviceUUID || !Number.isFinite(session.expiresAt) || session.expiresAt <= Date2.now()) return null;
+      return session;
+    }
+    function createEmployeeSession_(employee, deviceUUID) {
+      const token = Utilities.getUuid().replace(/-/g, "") + Utilities.getUuid().replace(/-/g, "");
+      const expiresAt = Date2.now() + DEFAULT_CONFIG.ADMIN_SESSION_HOURS * 60 * 60 * 1e3;
+      PropertiesService.getScriptProperties().setProperty(EMPLOYEE_SESSION_PREFIX + employee.employeeId, JSON.stringify({ token, deviceUUID: normalizeText_(deviceUUID), expiresAt }));
+      return { token, expiresAt: new Date2(expiresAt).toISOString() };
+    }
+    function requireEmployeeSession_(request, runtimeConfig) {
+      const token = normalizeText_(request.employeeToken);
+      if (!token) throw new Error("Please sign in with your password. Employee session is required");
+      const employee = requireEmployeeByDevice_(runtimeConfig, request.deviceUUID);
+      const session = employeeSession_(employee.employeeId);
+      if (!session || !constantTimeEqual_(session.token, token) || session.deviceUUID !== normalizeText_(request.deviceUUID)) throw new Error("Employee session expired. Please sign in again");
+      return employee;
+    }
+    function handleEmployeeLogout_(request, runtimeConfig) {
+      return integrityLock_(function() {
+        let employee;
+        try {
+          employee = requireEmployeeByDevice_(runtimeConfig, request.deviceUUID);
+        } catch (_error) {
+          return jsonResponse_(true, "Signed out");
+        }
+        const token = normalizeText_(request.employeeToken);
+        const session = employeeSession_(employee.employeeId);
+        if (session && constantTimeEqual_(session.token, token) && session.deviceUUID === normalizeText_(request.deviceUUID)) {
+          PropertiesService.getScriptProperties().deleteProperty(EMPLOYEE_SESSION_PREFIX + employee.employeeId);
+        }
+        return jsonResponse_(true, "Signed out");
+      });
+    }
+    var EmployeePassword = (() => {
+      var tt = Object.defineProperty;
+      var yt = Object.getOwnPropertyDescriptor;
+      var gt = Object.getOwnPropertyNames;
+      var wt = Object.prototype.hasOwnProperty;
+      var mt = (e, t) => {
+        for (var s in t) tt(e, s, { get: t[s], enumerable: true });
+      }, Ht = (e, t, s, r) => {
+        if (t && typeof t == "object" || typeof t == "function") for (let n of gt(t)) !wt.call(e, n) && n !== s && tt(e, n, { get: () => t[n], enumerable: !(r = yt(t, n)) || r.enumerable });
+        return e;
+      };
+      var At = (e) => Ht(tt({}, "__esModule", { value: true }), e);
+      var Ot = {};
+      mt(Ot, { derive: () => Vt });
+      function Lt(e) {
+        return e instanceof Uint8Array || ArrayBuffer.isView(e) && e.constructor.name === "Uint8Array";
+      }
+      function g(e) {
+        if (!Number.isSafeInteger(e) || e < 0) throw new Error("positive integer expected, got " + e);
+      }
+      function B(e, ...t) {
+        if (!Lt(e)) throw new Error("Uint8Array expected");
+        if (t.length > 0 && !t.includes(e.length)) throw new Error("Uint8Array expected of length " + t + ", got length=" + e.length);
+      }
+      function Q(e) {
+        if (typeof e != "function" || typeof e.create != "function") throw new Error("Hash should be wrapped by utils.createHasher");
+        g(e.outputLen), g(e.blockLen);
+      }
+      function R(e, t = true) {
+        if (e.destroyed) throw new Error("Hash instance has been destroyed");
+        if (t && e.finished) throw new Error("Hash#digest() has already been called");
+      }
+      function ht(e, t) {
+        B(e);
+        let s = t.outputLen;
+        if (e.length < s) throw new Error("digestInto() expects output buffer of length at least " + s);
+      }
+      function Y(e) {
+        return new Uint32Array(e.buffer, e.byteOffset, Math.floor(e.byteLength / 4));
+      }
+      function H(...e) {
+        for (let t = 0; t < e.length; t++) e[t].fill(0);
+      }
+      function K(e) {
+        return new DataView(e.buffer, e.byteOffset, e.byteLength);
+      }
+      function A(e, t) {
+        return e << 32 - t | e >>> t;
+      }
+      function x(e, t) {
+        return e << t | e >>> 32 - t >>> 0;
+      }
+      var Bt = new Uint8Array(new Uint32Array([287454020]).buffer)[0] === 68;
+      function kt(e) {
+        return e << 24 & 4278190080 | e << 8 & 16711680 | e >>> 8 & 65280 | e >>> 24 & 255;
+      }
+      function Ut(e) {
+        for (let t = 0; t < e.length; t++) e[t] = kt(e[t]);
+        return e;
+      }
+      var et = Bt ? (e) => e : Ut, Et = typeof Uint8Array.from([]).toHex == "function" && typeof Uint8Array.fromHex == "function", It = Array.from({ length: 256 }, (e, t) => t.toString(16).padStart(2, "0"));
+      function ft(e) {
+        if (B(e), Et) return e.toHex();
+        let t = "";
+        for (let s = 0; s < e.length; s++) t += It[e[s]];
+        return t;
+      }
+      function xt(e) {
+        if (typeof e != "string") throw new Error("string expected");
+        return new Uint8Array(new TextEncoder().encode(e));
+      }
+      function X(e) {
+        return typeof e == "string" && (e = xt(e)), B(e), e;
+      }
+      function st(e) {
+        return typeof e == "string" && (e = xt(e)), B(e), e;
+      }
+      function Z(e, t) {
+        if (t !== void 0 && {}.toString.call(t) !== "[object Object]") throw new Error("options should be object or undefined");
+        return Object.assign(e, t);
+      }
+      var N = class {
+      };
+      function dt(e) {
+        let t = (r) => e().update(X(r)).digest(), s = e();
+        return t.outputLen = s.outputLen, t.blockLen = s.blockLen, t.create = () => e(), t;
+      }
+      var $ = class extends N {
+        constructor(t, s) {
+          super(), this.finished = false, this.destroyed = false, Q(t);
+          let r = X(s);
+          if (this.iHash = t.create(), typeof this.iHash.update != "function") throw new Error("Expected instance of class which extends utils.Hash");
+          this.blockLen = this.iHash.blockLen, this.outputLen = this.iHash.outputLen;
+          let n = this.blockLen, o = new Uint8Array(n);
+          o.set(r.length > n ? t.create().update(r).digest() : r);
+          for (let c = 0; c < o.length; c++) o[c] ^= 54;
+          this.iHash.update(o), this.oHash = t.create();
+          for (let c = 0; c < o.length; c++) o[c] ^= 106;
+          this.oHash.update(o), H(o);
+        }
+        update(t) {
+          return R(this), this.iHash.update(t), this;
+        }
+        digestInto(t) {
+          R(this), B(t, this.outputLen), this.finished = true, this.iHash.digestInto(t), this.oHash.update(t), this.oHash.digestInto(t), this.destroy();
+        }
+        digest() {
+          let t = new Uint8Array(this.oHash.outputLen);
+          return this.digestInto(t), t;
+        }
+        _cloneInto(t) {
+          t || (t = Object.create(Object.getPrototypeOf(this), {}));
+          let { oHash: s, iHash: r, finished: n, destroyed: o, blockLen: c, outputLen: i } = this;
+          return t = t, t.finished = n, t.destroyed = o, t.blockLen = c, t.outputLen = i, t.oHash = s._cloneInto(t.oHash), t.iHash = r._cloneInto(t.iHash), t;
+        }
+        clone() {
+          return this._cloneInto();
+        }
+        destroy() {
+          this.destroyed = true, this.oHash.destroy(), this.iHash.destroy();
+        }
+      }, nt = (e, t, s) => new $(e, t).update(s).digest();
+      nt.create = (e, t) => new $(e, t);
+      function _t(e, t, s, r) {
+        Q(e);
+        let n = Z({ dkLen: 32, asyncTick: 10 }, r), { c: o, dkLen: c, asyncTick: i } = n;
+        if (g(o), g(c), g(i), o < 1) throw new Error("iterations (c) should be >= 1");
+        let h = st(t), f = st(s), l = new Uint8Array(c), a = nt.create(e, h), u = a._cloneInto().update(f);
+        return { c: o, dkLen: c, asyncTick: i, DK: l, PRF: a, PRFSalt: u };
+      }
+      function Ct(e, t, s, r, n) {
+        return e.destroy(), t.destroy(), r && r.destroy(), H(n), s;
+      }
+      function rt(e, t, s, r) {
+        let { c: n, dkLen: o, DK: c, PRF: i, PRFSalt: h } = _t(e, t, s, r), f, l = new Uint8Array(4), a = K(l), u = new Uint8Array(i.outputLen);
+        for (let b = 1, p = 0; p < o; b++, p += i.outputLen) {
+          let d = c.subarray(p, p + i.outputLen);
+          a.setInt32(0, b, false), (f = h._cloneInto(f)).update(l).digestInto(u), d.set(u.subarray(0, d.length));
+          for (let w = 1; w < n; w++) {
+            i._cloneInto(f).update(u).digestInto(u);
+            for (let y = 0; y < d.length; y++) d[y] ^= u[y];
+          }
+        }
+        return Ct(i, h, c, f, u);
+      }
+      function Ft(e, t, s, r) {
+        if (typeof e.setBigUint64 == "function") return e.setBigUint64(t, s, r);
+        let n = BigInt(32), o = BigInt(4294967295), c = Number(s >> n & o), i = Number(s & o), h = r ? 4 : 0, f = r ? 0 : 4;
+        e.setUint32(t + h, c, r), e.setUint32(t + f, i, r);
+      }
+      function lt(e, t, s) {
+        return e & t ^ ~e & s;
+      }
+      function ut(e, t, s) {
+        return e & t ^ e & s ^ t & s;
+      }
+      var v = class extends N {
+        constructor(t, s, r, n) {
+          super(), this.finished = false, this.length = 0, this.pos = 0, this.destroyed = false, this.blockLen = t, this.outputLen = s, this.padOffset = r, this.isLE = n, this.buffer = new Uint8Array(t), this.view = K(this.buffer);
+        }
+        update(t) {
+          R(this), t = X(t), B(t);
+          let { view: s, buffer: r, blockLen: n } = this, o = t.length;
+          for (let c = 0; c < o; ) {
+            let i = Math.min(n - this.pos, o - c);
+            if (i === n) {
+              let h = K(t);
+              for (; n <= o - c; c += n) this.process(h, c);
+              continue;
+            }
+            r.set(t.subarray(c, c + i), this.pos), this.pos += i, c += i, this.pos === n && (this.process(s, 0), this.pos = 0);
+          }
+          return this.length += t.length, this.roundClean(), this;
+        }
+        digestInto(t) {
+          R(this), ht(t, this), this.finished = true;
+          let { buffer: s, view: r, blockLen: n, isLE: o } = this, { pos: c } = this;
+          s[c++] = 128, H(this.buffer.subarray(c)), this.padOffset > n - c && (this.process(r, 0), c = 0);
+          for (let a = c; a < n; a++) s[a] = 0;
+          Ft(r, n - 8, BigInt(this.length * 8), o), this.process(r, 0);
+          let i = K(t), h = this.outputLen;
+          if (h % 4) throw new Error("_sha2: outputLen should be aligned to 32bit");
+          let f = h / 4, l = this.get();
+          if (f > l.length) throw new Error("_sha2: outputLen bigger than state");
+          for (let a = 0; a < f; a++) i.setUint32(4 * a, l[a], o);
+        }
+        digest() {
+          let { buffer: t, outputLen: s } = this;
+          this.digestInto(t);
+          let r = t.slice(0, s);
+          return this.destroy(), r;
+        }
+        _cloneInto(t) {
+          t || (t = new this.constructor()), t.set(...this.get());
+          let { blockLen: s, buffer: r, length: n, finished: o, destroyed: c, pos: i } = this;
+          return t.destroyed = c, t.finished = o, t.length = n, t.pos = i, n % s && t.buffer.set(r), t;
+        }
+        clone() {
+          return this._cloneInto();
+        }
+      }, L = Uint32Array.from([1779033703, 3144134277, 1013904242, 2773480762, 1359893119, 2600822924, 528734635, 1541459225]);
+      var Dt = Uint32Array.from([1116352408, 1899447441, 3049323471, 3921009573, 961987163, 1508970993, 2453635748, 2870763221, 3624381080, 310598401, 607225278, 1426881987, 1925078388, 2162078206, 2614888103, 3248222580, 3835390401, 4022224774, 264347078, 604807628, 770255983, 1249150122, 1555081692, 1996064986, 2554220882, 2821834349, 2952996808, 3210313671, 3336571891, 3584528711, 113926993, 338241895, 666307205, 773529912, 1294757372, 1396182291, 1695183700, 1986661051, 2177026350, 2456956037, 2730485921, 2820302411, 3259730800, 3345764771, 3516065817, 3600352804, 4094571909, 275423344, 430227734, 506948616, 659060556, 883997877, 958139571, 1322822218, 1537002063, 1747873779, 1955562222, 2024104815, 2227730452, 2361852424, 2428436474, 2756734187, 3204031479, 3329325298]), k = new Uint32Array(64), ot = class extends v {
+        constructor(t = 32) {
+          super(64, t, 8, false), this.A = L[0] | 0, this.B = L[1] | 0, this.C = L[2] | 0, this.D = L[3] | 0, this.E = L[4] | 0, this.F = L[5] | 0, this.G = L[6] | 0, this.H = L[7] | 0;
+        }
+        get() {
+          let { A: t, B: s, C: r, D: n, E: o, F: c, G: i, H: h } = this;
+          return [t, s, r, n, o, c, i, h];
+        }
+        set(t, s, r, n, o, c, i, h) {
+          this.A = t | 0, this.B = s | 0, this.C = r | 0, this.D = n | 0, this.E = o | 0, this.F = c | 0, this.G = i | 0, this.H = h | 0;
+        }
+        process(t, s) {
+          for (let a = 0; a < 16; a++, s += 4) k[a] = t.getUint32(s, false);
+          for (let a = 16; a < 64; a++) {
+            let u = k[a - 15], b = k[a - 2], p = A(u, 7) ^ A(u, 18) ^ u >>> 3, d = A(b, 17) ^ A(b, 19) ^ b >>> 10;
+            k[a] = d + k[a - 7] + p + k[a - 16] | 0;
+          }
+          let { A: r, B: n, C: o, D: c, E: i, F: h, G: f, H: l } = this;
+          for (let a = 0; a < 64; a++) {
+            let u = A(i, 6) ^ A(i, 11) ^ A(i, 25), b = l + u + lt(i, h, f) + Dt[a] + k[a] | 0, d = (A(r, 2) ^ A(r, 13) ^ A(r, 22)) + ut(r, n, o) | 0;
+            l = f, f = h, h = i, i = c + b | 0, c = o, o = n, n = r, r = b + d | 0;
+          }
+          r = r + this.A | 0, n = n + this.B | 0, o = o + this.C | 0, c = c + this.D | 0, i = i + this.E | 0, h = h + this.F | 0, f = f + this.G | 0, l = l + this.H | 0, this.set(r, n, o, c, i, h, f, l);
+        }
+        roundClean() {
+          H(k);
+        }
+        destroy() {
+          this.set(0, 0, 0, 0, 0, 0, 0, 0), H(this.buffer);
+        }
+      };
+      var ct = dt(() => new ot());
+      function bt(e, t, s, r, n, o) {
+        let c = e[t++] ^ s[r++], i = e[t++] ^ s[r++], h = e[t++] ^ s[r++], f = e[t++] ^ s[r++], l = e[t++] ^ s[r++], a = e[t++] ^ s[r++], u = e[t++] ^ s[r++], b = e[t++] ^ s[r++], p = e[t++] ^ s[r++], d = e[t++] ^ s[r++], w = e[t++] ^ s[r++], y = e[t++] ^ s[r++], q = e[t++] ^ s[r++], z = e[t++] ^ s[r++], j = e[t++] ^ s[r++], J = e[t++] ^ s[r++], m = c, U = i, E = h, I = f, S = l, _ = a, C = u, F = b, D = p, T = d, G = w, V = y, O = q, M = z, W = j, P = J;
+        for (let at = 0; at < 8; at += 2) S ^= x(m + O | 0, 7), D ^= x(S + m | 0, 9), O ^= x(D + S | 0, 13), m ^= x(O + D | 0, 18), T ^= x(_ + U | 0, 7), M ^= x(T + _ | 0, 9), U ^= x(M + T | 0, 13), _ ^= x(U + M | 0, 18), W ^= x(G + C | 0, 7), E ^= x(W + G | 0, 9), C ^= x(E + W | 0, 13), G ^= x(C + E | 0, 18), I ^= x(P + V | 0, 7), F ^= x(I + P | 0, 9), V ^= x(F + I | 0, 13), P ^= x(V + F | 0, 18), U ^= x(m + I | 0, 7), E ^= x(U + m | 0, 9), I ^= x(E + U | 0, 13), m ^= x(I + E | 0, 18), C ^= x(_ + S | 0, 7), F ^= x(C + _ | 0, 9), S ^= x(F + C | 0, 13), _ ^= x(S + F | 0, 18), V ^= x(G + T | 0, 7), D ^= x(V + G | 0, 9), T ^= x(D + V | 0, 13), G ^= x(T + D | 0, 18), O ^= x(P + W | 0, 7), M ^= x(O + P | 0, 9), W ^= x(M + O | 0, 13), P ^= x(W + M | 0, 18);
+        n[o++] = c + m | 0, n[o++] = i + U | 0, n[o++] = h + E | 0, n[o++] = f + I | 0, n[o++] = l + S | 0, n[o++] = a + _ | 0, n[o++] = u + C | 0, n[o++] = b + F | 0, n[o++] = p + D | 0, n[o++] = d + T | 0, n[o++] = w + G | 0, n[o++] = y + V | 0, n[o++] = q + O | 0, n[o++] = z + M | 0, n[o++] = j + W | 0, n[o++] = J + P | 0;
+      }
+      function it(e, t, s, r, n) {
+        let o = r + 0, c = r + 16 * n;
+        for (let i = 0; i < 16; i++) s[c + i] = e[t + (2 * n - 1) * 16 + i];
+        for (let i = 0; i < n; i++, o += 16, t += 16) bt(s, c, e, t, s, o), i > 0 && (c += 16), bt(s, o, e, t += 16, s, c);
+      }
+      function Tt(e, t, s) {
+        let r = Z({ dkLen: 32, asyncTick: 10, maxmem: 1073742848 }, s), { N: n, r: o, p: c, dkLen: i, asyncTick: h, maxmem: f, onProgress: l } = r;
+        if (g(n), g(o), g(c), g(i), g(h), g(f), l !== void 0 && typeof l != "function") throw new Error("progressCb should be function");
+        let a = 128 * o, u = a / 4, b = Math.pow(2, 32);
+        if (n <= 1 || (n & n - 1) !== 0 || n > b) throw new Error("Scrypt: N must be larger than 1, a power of 2, and less than 2^32");
+        if (c < 0 || c > (b - 1) * 32 / a) throw new Error("Scrypt: p must be a positive integer less than or equal to ((2^32 - 1) * 32) / (128 * r)");
+        if (i < 0 || i > (b - 1) * 32) throw new Error("Scrypt: dkLen should be positive integer less than or equal to (2^32 - 1) * 32");
+        if (a * (n + c) > f) throw new Error("Scrypt: memused is bigger than maxMem. Expected 128 * r * (N + p) > maxmem of " + f);
+        let d = rt(ct, e, t, { c: 1, dkLen: a * c }), w = Y(d), y = Y(new Uint8Array(a * n)), q = Y(new Uint8Array(a)), z = () => {
+        };
+        if (l) {
+          let j = 2 * n * c, J = Math.max(Math.floor(j / 1e4), 1), m = 0;
+          z = () => {
+            m++, l && (!(m % J) || m === j) && l(m / j);
+          };
+        }
+        return { N: n, r: o, p: c, dkLen: i, blockSize32: u, V: y, B32: w, B: d, tmp: q, blockMixCb: z, asyncTick: h };
+      }
+      function Gt(e, t, s, r, n) {
+        let o = rt(ct, e, s, { c: 1, dkLen: t });
+        return H(s, r, n), o;
+      }
+      function pt(e, t, s) {
+        let { N: r, r: n, p: o, dkLen: c, blockSize32: i, V: h, B32: f, B: l, tmp: a, blockMixCb: u } = Tt(e, t, s);
+        et(f);
+        for (let b = 0; b < o; b++) {
+          let p = i * b;
+          for (let d = 0; d < i; d++) h[d] = f[p + d];
+          for (let d = 0, w = 0; d < r - 1; d++) it(h, w, h, w += i, n), u();
+          it(h, (r - 1) * i, f, p, n), u();
+          for (let d = 0; d < r; d++) {
+            let w = f[p + i - 16] % r;
+            for (let y = 0; y < i; y++) a[y] = f[p + y] ^ h[w * i + y];
+            it(a, 0, f, p, n), u();
+          }
+        }
+        return et(f), Gt(e, c, l, h, a);
+      }
+      function Vt(e, t) {
+        let s = (r) => Uint8Array.from(r, (n) => n.charCodeAt(0));
+        return ft(pt(s(e), s(t), { N: 32768, r: 8, p: 3, dkLen: 32 }));
+      }
+      return At(Ot);
+    })();
     function ensureColumns_(sheet, count) {
       const existing = sheet.getMaxColumns();
       if (existing < count) sheet.insertColumnsAfter(existing, count - existing);
@@ -2769,7 +3173,7 @@
         lock.releaseLock();
       }
     }
-    return { doGet, doPost, setAdminCredential, getRuntimeConfig_, effectivePunches_, requireEmployeeByDevice_ };
+    return { doGet, doPost, setAdminCredential, getRuntimeConfig_, effectivePunches_, requireEmployeeByDevice_, createEmployeeSession_ };
   }
 
   // scripts/demo-runtime.js
@@ -2784,7 +3188,7 @@
   function validateState(state) {
     if (!dictionary(state) || state.version !== 1 || state.initialized !== true || !Number.isFinite(state.clockMs) || !dictionary(state.properties) || !dictionary(state.spreadsheets) || !dictionary(state.files)) throw damaged();
     if (!Object.values(state.properties).every((value) => typeof value === "string")) throw damaged();
-    for (const key of ["TAPIN_ADMIN_SESSIONS_JSON", "TAPIN_ADMIN_LOGIN_GUARD_JSON", "TAPIN_REQUEST_NONCES_JSON"]) {
+    for (const key of ["TAPIN_ADMIN_SESSIONS_JSON", "TAPIN_ADMIN_LOGIN_GUARD_JSON", "TAPIN_REQUEST_NONCES_JSON", ...Object.keys(state.properties).filter((key2) => key2.startsWith("TAPIN_EMPLOYEE_SESSION_") || key2.startsWith("TAPIN_EMPLOYEE_LOGIN_GUARD_"))]) {
       if (own(state.properties, key) && !dictionary(JSON.parse(state.properties[key]))) throw damaged();
     }
     if (!state.properties.TAPIN_ADMIN_USERNAME || !state.properties.TAPIN_ADMIN_PASSWORD_HASH || !state.properties.TAPIN_ADMIN_PASSWORD_SALT) throw damaged();
@@ -3034,6 +3438,7 @@ ${xref}
           post({
             action: "punch",
             deviceUUID: person.deviceUUID,
+            employeeToken: gas.createEmployeeSession_(person, person.deviceUUID).token,
             punchType,
             ipAddress: "203.0.113.10",
             latitude: 3.139,
@@ -3052,15 +3457,18 @@ ${xref}
     const approvedDate = `${today.slice(0, 7)}-27`;
     function leave(person, date, leaveType, reason, evidenceDataUrl) {
       const requestId = crypto.randomUUID();
-      post({ action: "submitLeave", deviceUUID: person.deviceUUID, requestId, requestTimestamp: clock.now, leaveType, startDate: date, endDate: date, dayPart: "full", reason, evidenceDataUrl });
+      post({ action: "submitLeave", deviceUUID: person.deviceUUID, employeeToken: gas.createEmployeeSession_(person, person.deviceUUID).token, requestId, requestTimestamp: clock.now, leaveType, startDate: date, endDate: date, dayPart: "full", reason, evidenceDataUrl });
       return requestId;
     }
     leave(people[0], pendingDate, "personal", "Family appointment — pending review");
     const approved = leave(people[1], approvedDate, "sick", "Medical appointment", sampleProof());
     post({ action: "adminUpdateLeaveStatus", token, requestId: approved, status: "approved", reviewNote: "Demo medical proof reviewed" });
-    post({ action: "employeeSubmitCorrection", deviceUUID: people[0].deviceUUID, date: pendingDate, time: "09:00", punchType: "in", reason: "Forgot to clock in — pending review", submissionId: crypto.randomUUID() });
+    post({ action: "employeeSubmitCorrection", deviceUUID: people[0].deviceUUID, employeeToken: gas.createEmployeeSession_(people[0], people[0].deviceUUID).token, date: pendingDate, time: "09:00", punchType: "in", reason: "Forgot to clock in — pending review", submissionId: crypto.randomUUID() });
     for (const person of people) post({ action: "adminSaveMonthlyAdjustment", token, employeeId: person.employeeId, year, month, payAmount: 150, reason: "Demo performance bonus" });
     post({ action: "adminLogout", token });
+    for (const key of Object.keys(state.properties)) {
+      if (key.startsWith("TAPIN_EMPLOYEE_SESSION_")) delete state.properties[key];
+    }
     state.clockMs = clock.now;
     state.initialized = true;
   }
@@ -3106,7 +3514,7 @@ ${xref}
         if (Number.isFinite(Number(request.requestTimestamp))) request.requestTimestamp = Number(request.requestTimestamp) + (clock.now - priorNow);
         const output = ["publicConfig", "serverTime"].includes(request.action) ? gas.doGet({ parameter: request }) : gas.doPost({ postData: { contents: JSON.stringify(request) } });
         const response = decode(output);
-        if (!response.ok && !["adminLogin", "adminLogout"].includes(request.action)) {
+        if (!response.ok && !["adminLogin", "adminLogout", "employeeLogin", "employeeLogout"].includes(request.action)) {
           if (!persisted) storage.setItem(STATE_KEY, beforeRequest);
           return response;
         }

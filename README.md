@@ -3,12 +3,12 @@
 TapIn 現在預設為顧客展示用的純前端 PWA。所有員工、打卡、請假、證明、班表、補簽、薪資與管理員工作階段資料都存在目前瀏覽器的 `localStorage`，不需要 GAS、Cloud Run、Firestore 或 Google 登入。業務規則仍由同一份 `gas/*.gs` 打包執行。
 
 ## 功能摘要
-- 一鍵打卡（以 Device UUID 自動識別）
+- 員工以綁定裝置與密碼登入；首次設定密碼後須重新登入
 - 員工複製頁面上方 Device ID，由管理員建立與綁定帳號
 - 裝置綁定（Device UUID）
 - IP 邊界判定（Office / Remote/Field）
 - GPS 座標與精度檢查
-- 首頁免登入上／下班打卡；管理員可從座標開啟地圖
+- 首頁登入後可上／下班打卡；管理員可從座標開啟地圖
 - 員工班表群組、請假與補簽申請、月曆和申請紀錄
 - 管理員審核請假／補簽、直接補簽、查看月工時與馬幣薪資試算、匯出 CSV
 - 管理後台登入、管理員工帳號、修改系統設定、查看打卡紀錄
@@ -28,7 +28,7 @@ npm run build:demo
 python3 -m http.server 8080 --directory web
 ```
 
-開啟 <http://localhost:8080/>。管理員：`admin`／`demo-password`；目前裝置已綁定示範員工 Alex Morgan，可直接上下班打卡或以員工角色登入。另有 Jamie Chen、Taylor Singh，以及本月打卡、待審請假／補簽、證明與薪資調整資料。
+開啟 <http://localhost:8080/>。管理員：`admin`／`demo-password`；目前裝置已綁定示範員工 Alex Morgan。按 **Sign in with this device**，首次設定 8–128 字元密碼並重新登入後即可打卡；後續登入需輸入密碼。另有 Jamie Chen、Taylor Singh，以及本月打卡、待審請假／補簽、證明與薪資調整資料。
 
 - 打卡、員工管理／封存、裝置綁定、班表／薪資生效日、請假證明與審核、補簽／撤銷、月曆、薪資調整與 CSV 匯出沿用現有業務規則。
 - Demo 使用模擬 Office IP、GPS 與可推進的時鐘，不要求定位或通知權限，也不查詢外部 API。同分鐘連續上下班會將 Demo 時鐘推進，避免時間衝突。

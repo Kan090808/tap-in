@@ -18,7 +18,7 @@ async function buildDemo({ write = true } = {}) {
           const directory = path.join(root, 'gas');
           const files = (await fs.readdir(directory)).filter(file => file.endsWith('.gs')).sort();
           const sources = await Promise.all(files.map(async file => `// gas/${file}\n${await fs.readFile(path.join(directory, file), 'utf8')}`));
-          return { loader: 'js', contents: `export function createGas(services) {\nconst { SpreadsheetApp, PropertiesService, LockService, Utilities, ContentService, DriveApp, Date } = services;\n${sources.join('\n')}\nreturn { doGet, doPost, setAdminCredential, getRuntimeConfig_, effectivePunches_, requireEmployeeByDevice_ };\n}` };
+          return { loader: 'js', contents: `export function createGas(services) {\nconst { SpreadsheetApp, PropertiesService, LockService, Utilities, ContentService, DriveApp, Date } = services;\n${sources.join('\n')}\nreturn { doGet, doPost, setAdminCredential, getRuntimeConfig_, effectivePunches_, requireEmployeeByDevice_, createEmployeeSession_ };\n}` };
         });
       }
     }],
